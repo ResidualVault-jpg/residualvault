@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>rv-control | ResidualVault AI Agent Dashboard</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header class="header">
+    <div class="header-left">
+      <div class="logo">
+        <span class="logo-icon">&#9651;</span>
+        <span class="logo-text">rv-control</span>
+        <span class="logo-sub">ResidualVault Agent Network</span>
+      </div>
+    </div>
+    <div class="header-right">
+      <div class="status-bar">
+        <span class="dot dot--green" id="ws-status"></span>
+        <span id="ws-label">Connecting...</span>
+      </div>
+      <div class="last-update">Updated: <span id="last-updated">--</span></div>
+    </div>
+  </header>
+
+  <!-- Summary Cards -->
+  <section class="summary-grid">
+    <div class="card card--stat" id="stat-agents">
+      <div class="stat-value" id="val-agents">--</div>
+      <div class="stat-label">Total Agents</div>
+    </div>
+    <div class="card card--stat" id="stat-runs">
+      <div class="stat-value" id="val-runs">--</div>
+      <div class="stat-label">Total Runs</div>
+    </div>
+    <div class="card card--stat" id="stat-success">
+      <div class="stat-value" id="val-success">--%</div>
+      <div class="stat-label">Success Rate</div>
+    </div>
+    <div class="card card--stat" id="stat-alerts">
+      <div class="stat-value" id="val-alerts">--</div>
+      <div class="stat-label">Open Alerts</div>
+    </div>
+  </section>
+
+  <div class="main-grid">
+    <!-- Agent Grid -->
+    <section class="panel panel--agents">
+      <div class="panel-header">
+        <h2>Agent Network <span class="badge" id="agent-count">0</span></h2>
+        <div class="panel-actions">
+          <input type="text" id="agent-search" placeholder="Search agents..." class="search-input" />
+        </div>
+      </div>
+      <div class="agent-grid" id="agent-grid">
+        <!-- Populated by JS -->
+      </div>
+    </section>
+
+    <!-- Alerts Panel -->
+    <section class="panel panel--alerts">
+      <div class="panel-header">
+        <h2>Open Alerts <span class="badge badge--red" id="alert-count">0</span></h2>
+      </div>
+      <div class="alerts-list" id="alerts-list">
+        <div class="empty-state">No open alerts</div>
+      </div>
+    </section>
+
+    <!-- Live Log Stream -->
+    <section class="panel panel--logs">
+      <div class="panel-header">
+        <h2>Live Log Stream</h2>
+        <div class="panel-actions">
+          <select id="log-filter" class="filter-select">
+            <option value="">All agents</option>
+          </select>
+          <select id="log-type-filter" class="filter-select">
+            <option value="">All types</option>
+            <option value="error">Errors</option>
+            <option value="warning">Warnings</option>
+            <option value="start">Start</option>
+            <option value="complete">Complete</option>
+          </select>
+          <button class="btn btn--sm" id="clear-logs">Clear</button>
+        </div>
+      </div>
+      <div class="log-stream" id="log-stream">
+        <!-- Populated by JS -->
+      </div>
+    </section>
+
+    <!-- Reports Panel -->
+    <section class="panel panel--reports">
+      <div class="panel-header">
+        <h2>Recent Reports <span class="badge" id="report-count">0</span></h2>
+        <select id="report-filter" class="filter-select">
+          <option value="">All agents</option>
+        </select>
+      </div>
+      <div class="reports-list" id="reports-list">
+        <!-- Populated by JS -->
+      </div>
+    </section>
+
+    <!-- Generated Content -->
+    <section class="panel panel--content">
+      <div class="panel-header">
+        <h2>Generated Content</h2>
+        <select id="content-type-filter" class="filter-select">
+          <option value="">All types</option>
+          <option value="blog-post">Blog Posts</option>
+          <option value="social-posts">Social Posts</option>
+          <option value="email-newsletter">Newsletters</option>
+          <option value="image">Images</option>
+          <option value="video">Videos</option>
+          <option value="ad-campaign">Ad Campaigns</option>
+          <option value="keyword-research">SEO Keywords</option>
+        </select>
+      </div>
+      <div class="content-list" id="content-list">
+        <!-- Populated by JS -->
+      </div>
+    </section>
+  </div>
+
+  <!-- Agent Trigger Modal -->
+  <div class="modal" id="trigger-modal">
+    <div class="modal-overlay" id="modal-overlay"></div>
+    <div class="modal-box">
+      <div class="modal-header">
+        <h3 id="modal-title">Run Agent</h3>
+        <button class="modal-close" id="modal-close">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p id="modal-desc">Manually trigger this agent?</p>
+        <div class="modal-actions">
+          <button class="btn btn--primary" id="modal-confirm">Run Now</button>
+          <button class="btn btn--ghost" id="modal-cancel">Cancel</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Report Detail Modal -->
+  <div class="modal" id="report-modal">
+    <div class="modal-overlay" id="report-modal-overlay"></div>
+    <div class="modal-box modal-box--wide">
+      <div class="modal-header">
+        <h3 id="report-modal-title">Report</h3>
+        <button class="modal-close" id="report-modal-close">&times;</button>
+      </div>
+      <div class="modal-body">
+        <pre class="report-content" id="report-modal-content"></pre>
+      </div>
+    </div>
+  </div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
