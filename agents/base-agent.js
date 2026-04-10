@@ -7,6 +7,21 @@ const fs        = require('fs');
 const path      = require('path');
 const db        = require('../db');
 
+// Proxy support: honour HTTPS_PROXY / HTTP_PROXY / GLOBAL_AGENT_HTTP_PROXY
+function _buildAnthropicClient(apiKey) {
+  const proxyUrl = process.env.HTTPS_PROXY
+                || process.env.HTTP_PROXY
+                || process.env.GLOBAL_AGENT_HTTP_PROXY
+                || '';
+  if (proxyUrl) {
+    try {
+      const { HttpsProxyAgent } = require('https-proxy-agent');
+      return new Anthropic({ apiKey, httpAgent: new HttpsProxyAgent(proxyUrl) });
+    } catch (_) { /* fall through to plain client */ }
+  }
+  return new Anthropic({ apiKey });
+}
+
 // Ensure logs directory exists
 const logsDir = path.join(__dirname, '../logs');
 if (!fs.existsSync(logsDir)) fs.mkdirSync(logsDir, { recursive: true });
@@ -31,7 +46,7 @@ class BaseAgent {
     this.lastRun   = null;
     this.status    = 'idle';
 
-    this.client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+    this.client = _buildAnthropicClient(process.env.ANTHROPIC_API_KEY);
 
     const logFile = path.join(logsDir, `${this.name.toLowerCase().replace(/[\s/&]+/g, '-')}.log`);
     this.logger = winston.createLogger({
