@@ -86,24 +86,27 @@ function registerCronJobs() {
   }
 }
 
-/** Manually trigger an agent by key */
+/** Manually trigger an agent by key (auto-loads agents if not yet loaded) */
 async function runAgent(key, context = {}) {
+  if (Object.keys(agents).length === 0) loadAgents();
   const agent = agents[key];
   if (!agent) throw new Error(`Unknown agent key: ${key}`);
   logger.info(`Manual trigger: ${agent.name}`);
   return agent.run(context);
 }
 
-/** Get all agent statuses */
+/** Get all agent statuses (auto-loads agents if not yet loaded) */
 function getAgentStatuses() {
+  if (Object.keys(agents).length === 0) loadAgents();
   return Object.entries(agents).map(([key, agent]) => ({
     key,
     ...agent.getStatus(),
   }));
 }
 
-/** Get a specific agent instance */
+/** Get a specific agent instance (auto-loads agents if not yet loaded) */
 function getAgent(key) {
+  if (Object.keys(agents).length === 0) loadAgents();
   return agents[key] || null;
 }
 
