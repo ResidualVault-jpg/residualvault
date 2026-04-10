@@ -129,7 +129,8 @@ Output JSON array:
     for (const brief of platforms) {
       try {
         const raw   = await this.generateSocialPosts(brief.platform, brief.count, brief.theme);
-        const posts = this.parseJSON(raw) || [];
+        const _postsParsed = this.parseJSON(raw);
+        const posts        = Array.isArray(_postsParsed) ? _postsParsed : [];
 
         await this.saveContent(
           'social-posts',
@@ -154,7 +155,8 @@ Output JSON array:
     ];
 
     const repliesRaw = await this.generateEngagementReplies(engagementScenarios);
-    const replies    = this.parseJSON(repliesRaw) || [];
+    const _repliesParsed = this.parseJSON(repliesRaw);
+    const replies        = Array.isArray(_repliesParsed) ? _repliesParsed : [];
     await this.saveContent('engagement-replies', 'Community Engagement Replies', JSON.stringify(replies, null, 2));
 
     // Weekly strategy (Mondays only)

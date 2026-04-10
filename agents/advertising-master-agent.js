@@ -131,7 +131,8 @@ Output JSON array:
 
     // Generate extra ad creatives
     const creativesRaw = await this.generateAdCreatives('Build passive income with ResidualVault', 5);
-    const creatives    = this.parseJSON(creativesRaw) || [];
+    const _creativesParsed = this.parseJSON(creativesRaw);
+    const creatives        = Array.isArray(_creativesParsed) ? _creativesParsed : [];
 
     await this.saveContent(
       'ad-creatives',

@@ -114,14 +114,21 @@ class BaseAgent {
   }
 
   /**
-   * Parse JSON safely from Claude output.
+   * Parse JSON safely from Claude output (handles code blocks and bare JSON).
    * @param {string} text
-   * @returns {object|null}
+   * @returns {any|null}
    */
   parseJSON(text) {
+    if (!text) return null;
     try {
-      const match = text.match(/```(?:json)?\s*([\s\S]*?)```/) || [null, text];
-      return JSON.parse(match[1].trim());
+      // 1. Try fenced code block: ```json ... ```
+      const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/);
+      if (fenced) return JSON.parse(fenced[1].trim());
+      // 2. Try raw JSON starting with { or [
+      const raw = text.match(/(\{[\s\S]*\}|\[[\s\S]*\])/);
+      if (raw) return JSON.parse(raw[1].trim());
+      // 3. Full string as JSON
+      return JSON.parse(text.trim());
     } catch {
       return null;
     }

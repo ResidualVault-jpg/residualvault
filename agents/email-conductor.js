@@ -168,7 +168,8 @@ Output JSON array:
 
     // Subject line tests for next campaign
     const subjectLinesRaw = await this.generateSubjectLineTests('How to earn your first $1,000 in passive income', 10);
-    const subjectLines    = this.parseJSON(subjectLinesRaw) || [];
+    const _slParsed   = this.parseJSON(subjectLinesRaw);
+    const subjectLines = Array.isArray(_slParsed) ? _slParsed : [];
 
     await this.saveContent('subject-line-tests', 'Subject Line Test Suite', JSON.stringify(subjectLines, null, 2), null, { count: subjectLines.length });
 

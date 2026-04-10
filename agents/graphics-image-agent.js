@@ -72,7 +72,8 @@ Output JSON array:
   }
 ]
 `);
-    return this.parseJSON(raw) || [];
+    const parsed = this.parseJSON(raw);
+    return Array.isArray(parsed) ? parsed : [];
   }
 
   async execute(context = {}) {
