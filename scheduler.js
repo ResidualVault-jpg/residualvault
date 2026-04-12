@@ -73,16 +73,17 @@ function registerCronJobs() {
       continue;
     }
 
+    const tz = agent.timezone || 'America/New_York';
     cronJobs[key] = cron.schedule(schedule, async () => {
-      logger.info(`Triggering ${agent.name} (${schedule})`);
+      logger.info(`Triggering ${agent.name} (${schedule} ${tz})`);
       try {
         await agent.run();
       } catch (err) {
         logger.error(`${agent.name} run error: ${err.message}`);
       }
-    }, { timezone: 'America/New_York' });
+    }, { timezone: tz });
 
-    logger.info(`Scheduled ${agent.name} → "${schedule}"`);
+    logger.info(`Scheduled ${agent.name} → "${schedule}" (${tz})`);
   }
 }
 

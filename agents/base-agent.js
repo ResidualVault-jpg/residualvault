@@ -33,6 +33,7 @@ class BaseAgent {
    * @param {string} config.role        - Role description for system prompt
    * @param {string} [config.model]     - Claude model ID
    * @param {string} [config.schedule]  - node-cron expression
+   * @param {string} [config.timezone]  - IANA timezone for the cron job (default: America/New_York)
    * @param {number} [config.maxTokens] - Max tokens per Claude call
    */
   constructor(config) {
@@ -40,6 +41,7 @@ class BaseAgent {
     this.role      = config.role;
     this.model     = config.model     || 'claude-opus-4-5';
     this.schedule  = config.schedule  || '0 * * * *';
+    this.timezone  = config.timezone  || 'America/New_York';
     this.maxTokens = config.maxTokens || 4096;
 
     this.isRunning = false;
@@ -198,6 +200,7 @@ class BaseAgent {
       isRunning: this.isRunning,
       lastRun:   this.lastRun,
       schedule:  this.schedule,
+      timezone:  this.timezone,
       model:     this.model,
     };
   }

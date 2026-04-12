@@ -53,7 +53,8 @@ class HeyGenVideoAgent extends BaseAgent {
                  'Bryan Castlemore — a confident Wall Street-style advisor — who presents ResidualVault\'s ' +
                  'weekly insights directly to camera. Every script must feel fresh, data-driven, and urgent.',
       model:     'claude-opus-4-5',
-      schedule:  '0 10 * * 1',  // Every Monday at 10 AM
+      schedule:  '0 15 * * 0',  // Every Sunday at 3 PM Denver time
+      timezone:  'America/Denver',
       maxTokens: 8096,
     });
 
@@ -422,8 +423,10 @@ Output this exact JSON structure:
   // ─── Pending Video Checker ────────────────────────────────────────────────
 
   /**
-   * Each run: find all videos still marked 'processing' in the DB,
-   * check their HeyGen status, and — if complete — download and upload to YouTube.
+   * Each Sunday run: check all videos still marked 'processing'.
+   * When HeyGen finishes rendering, download the file and mark the record
+   * 'ready_for_review' — do NOT upload to YouTube yet.
+   * The owner reviews via /api/videos and calls approve/reject/edit.
    */
   async checkPendingVideos() {
     const rows = db.db.prepare(`
@@ -452,36 +455,22 @@ Output this exact JSON structure:
         this._log('info', `Pending check "${row.title}": ${status}`);
 
         if (status === 'completed' && videoUrl) {
-          // Download
+          // Download to disk so it's ready for review
           const safeTitle = row.title.replace(/[^a-z0-9_-]/gi, '_').substring(0, 60);
           const filename  = `${safeTitle}_${meta.videoId.substring(0, 8)}.mp4`;
           const localPath = await this._downloadVideo(videoUrl, filename);
 
-          // Upload to YouTube
-          const ytResult = await this._uploadToYouTube(
-            localPath,
-            row.title,
-            meta.youtubeDescription || `${row.title} — ResidualVault.com`,
-            meta.youtubeTags || ['ResidualVault', 'passive income', 'crypto staking']
-          );
-
-          meta.status       = 'completed';
-          meta.videoUrl     = videoUrl;
-          meta.localPath    = localPath;
-          meta.youtubeUrl   = ytResult?.url   || null;
-          meta.youtubeId    = ytResult?.videoId || null;
-          meta.completedAt  = new Date().toISOString();
+          // Mark ready_for_review — owner must approve before YouTube upload
+          meta.status          = 'ready_for_review';
+          meta.videoUrl        = videoUrl;
+          meta.localPath       = localPath;
+          meta.renderedAt      = new Date().toISOString();
 
           db.db.prepare(`UPDATE generated_content SET url = ?, metadata = ? WHERE id = ?`)
-            .run(ytResult?.url || videoUrl, JSON.stringify(meta), row.id);
+            .run(videoUrl, JSON.stringify(meta), row.id);
 
-          updates.push({
-            id:         row.id,
-            title:      row.title,
-            status:     'completed',
-            localPath,
-            youtubeUrl: meta.youtubeUrl,
-          });
+          this._log('info', `"${row.title}" ready for review → ${localPath}`);
+          updates.push({ id: row.id, title: row.title, status: 'ready_for_review', localPath });
 
         } else if (status === 'failed') {
           meta.status    = 'failed';
@@ -492,13 +481,98 @@ Output this exact JSON structure:
           await this.reportIssue('medium', `Video Failed: ${row.title}`, `videoId: ${meta.videoId}`);
           updates.push({ id: row.id, title: row.title, status: 'failed' });
         }
-        // still processing — leave in DB, check next run
+        // still processing — leave in DB, check next Sunday
       } catch (err) {
         this._log('error', `Pending check error for "${row.title}": ${err.message}`);
       }
     }
 
     return updates;
+  }
+
+  // ─── Approval Actions ─────────────────────────────────────────────────────
+
+  /**
+   * Called by /api/videos/:id/approve — uploads the downloaded video to YouTube.
+   * @param {number} dbId  - generated_content.id
+   * @returns {{ youtubeUrl, youtubeId }}
+   */
+  async publishVideo(dbId) {
+    const row = db.db.prepare('SELECT * FROM generated_content WHERE id = ?').get(dbId);
+    if (!row) throw new Error(`Video record ${dbId} not found`);
+
+    let meta;
+    try { meta = JSON.parse(row.metadata); } catch { throw new Error('Invalid metadata JSON'); }
+
+    if (!meta.localPath || !require('fs').existsSync(meta.localPath)) {
+      // File not downloaded yet — fetch from HeyGen first
+      if (!meta.videoUrl) throw new Error('No video URL available; video may still be processing');
+      const safeTitle = row.title.replace(/[^a-z0-9_-]/gi, '_').substring(0, 60);
+      const filename  = `${safeTitle}_${meta.videoId.substring(0, 8)}.mp4`;
+      meta.localPath  = await this._downloadVideo(meta.videoUrl, filename);
+    }
+
+    const ytResult = await this._uploadToYouTube(
+      meta.localPath,
+      row.title,
+      meta.youtubeDescription || `${row.title} — ResidualVault.com`,
+      meta.youtubeTags || ['ResidualVault', 'passive income', 'crypto staking', 'APY']
+    );
+
+    meta.status      = 'live';
+    meta.youtubeUrl  = ytResult?.url    || null;
+    meta.youtubeId   = ytResult?.videoId || null;
+    meta.approvedAt  = new Date().toISOString();
+
+    db.db.prepare(`UPDATE generated_content SET url = ?, metadata = ? WHERE id = ?`)
+      .run(meta.youtubeUrl || meta.videoUrl, JSON.stringify(meta), dbId);
+
+    this._log('info', `Approved & published: "${row.title}" → ${meta.youtubeUrl || '(YouTube upload skipped)'}`);
+    return { youtubeUrl: meta.youtubeUrl, youtubeId: meta.youtubeId };
+  }
+
+  /**
+   * Called by /api/videos/:id/reject — marks the record rejected.
+   * @param {number} dbId
+   * @param {string} [reason]
+   */
+  rejectVideo(dbId, reason = '') {
+    const row = db.db.prepare('SELECT metadata FROM generated_content WHERE id = ?').get(dbId);
+    if (!row) throw new Error(`Video record ${dbId} not found`);
+    let meta;
+    try { meta = JSON.parse(row.metadata); } catch { meta = {}; }
+    meta.status     = 'rejected';
+    meta.rejectedAt = new Date().toISOString();
+    meta.reason     = reason;
+    db.db.prepare(`UPDATE generated_content SET metadata = ? WHERE id = ?`)
+      .run(JSON.stringify(meta), dbId);
+    this._log('info', `Rejected video ${dbId}: ${reason || 'no reason given'}`);
+  }
+
+  /**
+   * Called by /api/videos/:id/edit — updates YouTube metadata and/or triggers
+   * a re-render if a new script is provided.
+   * @param {number} dbId
+   * @param {{ title, youtubeDescription, youtubeTags, rerender }} patch
+   */
+  async editVideo(dbId, patch = {}) {
+    const row = db.db.prepare('SELECT * FROM generated_content WHERE id = ?').get(dbId);
+    if (!row) throw new Error(`Video record ${dbId} not found`);
+    let meta;
+    try { meta = JSON.parse(row.metadata); } catch { meta = {}; }
+
+    // Update metadata fields
+    const newTitle = patch.title || row.title;
+    if (patch.youtubeDescription) meta.youtubeDescription = patch.youtubeDescription;
+    if (patch.youtubeTags)        meta.youtubeTags        = patch.youtubeTags;
+    meta.editedAt = new Date().toISOString();
+    meta.status   = 'ready_for_review'; // reset to reviewable after edit
+
+    db.db.prepare(`UPDATE generated_content SET title = ?, metadata = ? WHERE id = ?`)
+      .run(newTitle, JSON.stringify(meta), dbId);
+
+    this._log('info', `Edited video ${dbId}: "${newTitle}"`);
+    return { id: dbId, title: newTitle, status: 'ready_for_review' };
   }
 
   // ─── DB Persistence ───────────────────────────────────────────────────────

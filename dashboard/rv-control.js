@@ -131,6 +131,122 @@ app.post('/api/agents/:key/run', async (req, res) => {
   }
 });
 
+// ─── Video Review & Approval ──────────────────────────────────────────────────
+
+/**
+ * GET /api/videos?status=ready_for_review
+ * Returns video records with optional status filter.
+ * Statuses: processing | ready_for_review | approved | live | rejected | failed
+ */
+app.get('/api/videos', (req, res) => {
+  try {
+    const { status, limit = '50' } = req.query;
+    let rows;
+    if (status) {
+      rows = db.db.prepare(`
+        SELECT id, title, url, metadata, created_at
+        FROM   generated_content
+        WHERE  content_type IN ('video-office-journey','video-conference-room','video')
+          AND  metadata LIKE ?
+        ORDER  BY created_at DESC
+        LIMIT  ?
+      `).all(`%"status":"${status}"%`, parseInt(limit));
+    } else {
+      rows = db.db.prepare(`
+        SELECT id, title, url, metadata, created_at
+        FROM   generated_content
+        WHERE  content_type IN ('video-office-journey','video-conference-room','video')
+        ORDER  BY created_at DESC
+        LIMIT  ?
+      `).all(parseInt(limit));
+    }
+    // Parse metadata for cleaner response
+    const videos = rows.map(r => {
+      let meta = {};
+      try { meta = JSON.parse(r.metadata); } catch (_) {}
+      return {
+        id:                 r.id,
+        title:              r.title,
+        youtubeUrl:         r.url,
+        status:             meta.status      || 'unknown',
+        format:             meta.format      || 'video',
+        localPath:          meta.localPath   || null,
+        videoUrl:           meta.videoUrl    || null,
+        youtubeDescription: meta.youtubeDescription || null,
+        youtubeTags:        meta.youtubeTags || [],
+        thumbnailConcept:   meta.thumbnailConcept || null,
+        submittedAt:        meta.submittedAt  || null,
+        renderedAt:         meta.renderedAt   || null,
+        approvedAt:         meta.approvedAt   || null,
+        rejectedAt:         meta.rejectedAt   || null,
+        reason:             meta.reason       || null,
+        createdAt:          r.created_at,
+      };
+    });
+    res.json(videos);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * POST /api/videos/:id/approve
+ * Uploads the video to YouTube and marks it 'live'.
+ */
+app.post('/api/videos/:id/approve', async (req, res) => {
+  try {
+    let scheduler;
+    try { scheduler = require('../scheduler'); } catch (_) {}
+    const agent = scheduler?.getAgent('heygen-video');
+    if (!agent) return res.status(503).json({ error: 'HeyGen Video Agent not available' });
+
+    const result = await agent.publishVideo(parseInt(req.params.id));
+    broadcastUpdate();
+    res.json({ success: true, ...result });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * POST /api/videos/:id/reject
+ * Body: { reason: "string" }
+ */
+app.post('/api/videos/:id/reject', (req, res) => {
+  try {
+    let scheduler;
+    try { scheduler = require('../scheduler'); } catch (_) {}
+    const agent = scheduler?.getAgent('heygen-video');
+    if (!agent) return res.status(503).json({ error: 'HeyGen Video Agent not available' });
+
+    agent.rejectVideo(parseInt(req.params.id), req.body?.reason || '');
+    broadcastUpdate();
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * PUT /api/videos/:id/edit
+ * Body: { title, youtubeDescription, youtubeTags }
+ * Updates metadata; resets status to ready_for_review.
+ */
+app.put('/api/videos/:id/edit', async (req, res) => {
+  try {
+    let scheduler;
+    try { scheduler = require('../scheduler'); } catch (_) {}
+    const agent = scheduler?.getAgent('heygen-video');
+    if (!agent) return res.status(503).json({ error: 'HeyGen Video Agent not available' });
+
+    const result = await agent.editVideo(parseInt(req.params.id), req.body || {});
+    broadcastUpdate();
+    res.json({ success: true, ...result });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 /** GET /api/agents/statuses */
 app.get('/api/agents/statuses', (req, res) => {
   try {
