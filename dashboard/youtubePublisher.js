@@ -23,21 +23,43 @@ const SCOPES = ['https://www.googleapis.com/auth/youtube.upload'];
 
 /**
  * Build an authorised YouTube client.
- * Throws if any required env var is missing.
+ *
+ * Priority:
+ *   1. Refresh token flow (YOUTUBE_CLIENT_ID + YOUTUBE_CLIENT_SECRET + YOUTUBE_REFRESH_TOKEN)
+ *      — fully automatic, tokens are renewed indefinitely.
+ *   2. Access token (YOUTUBE_ACCESS_TOKEN) — works immediately but expires in ~1 hour.
+ *      Use this as a fallback or for initial testing before the refresh flow is confirmed.
+ *
+ * Throws if no usable credentials are present.
  */
 function _buildClient() {
-  const { YOUTUBE_CLIENT_ID, YOUTUBE_CLIENT_SECRET, YOUTUBE_REFRESH_TOKEN } = process.env;
+  const {
+    YOUTUBE_CLIENT_ID,
+    YOUTUBE_CLIENT_SECRET,
+    YOUTUBE_REFRESH_TOKEN,
+    YOUTUBE_ACCESS_TOKEN,
+  } = process.env;
 
-  if (!YOUTUBE_CLIENT_ID || !YOUTUBE_CLIENT_SECRET || !YOUTUBE_REFRESH_TOKEN) {
-    throw new Error(
-      'YouTube credentials not configured. ' +
-      'Set YOUTUBE_CLIENT_ID, YOUTUBE_CLIENT_SECRET, YOUTUBE_REFRESH_TOKEN in .env'
-    );
+  if (YOUTUBE_CLIENT_ID && YOUTUBE_CLIENT_SECRET && YOUTUBE_REFRESH_TOKEN) {
+    const oauth2 = new google.auth.OAuth2(YOUTUBE_CLIENT_ID, YOUTUBE_CLIENT_SECRET);
+    const creds  = { refresh_token: YOUTUBE_REFRESH_TOKEN };
+    if (YOUTUBE_ACCESS_TOKEN) creds.access_token = YOUTUBE_ACCESS_TOKEN;
+    oauth2.setCredentials(creds);
+    return google.youtube({ version: 'v3', auth: oauth2 });
   }
 
-  const oauth2 = new google.auth.OAuth2(YOUTUBE_CLIENT_ID, YOUTUBE_CLIENT_SECRET);
-  oauth2.setCredentials({ refresh_token: YOUTUBE_REFRESH_TOKEN });
-  return google.youtube({ version: 'v3', auth: oauth2 });
+  if (YOUTUBE_ACCESS_TOKEN) {
+    // Direct access-token path — no refresh possible, but works immediately
+    const oauth2 = new google.auth.OAuth2();
+    oauth2.setCredentials({ access_token: YOUTUBE_ACCESS_TOKEN });
+    return google.youtube({ version: 'v3', auth: oauth2 });
+  }
+
+  throw new Error(
+    'YouTube credentials not configured. ' +
+    'Set YOUTUBE_CLIENT_ID + YOUTUBE_CLIENT_SECRET + YOUTUBE_REFRESH_TOKEN ' +
+    '(or YOUTUBE_ACCESS_TOKEN for short-lived access) in .env'
+  );
 }
 
 /**
