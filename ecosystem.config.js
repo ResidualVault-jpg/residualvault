@@ -1,6 +1,14 @@
 'use strict';
 
+// Load .env so proxy URL (written by refresh-proxy.sh on each session start) is available
+require('dotenv').config({ path: '/home/vaultadmin/residualvault/.env' });
+
 const DEPLOY_DIR = '/home/vaultadmin/residualvault';
+
+const PROXY = process.env.GLOBAL_AGENT_HTTP_PROXY
+           || process.env.HTTPS_PROXY
+           || process.env.HTTP_PROXY
+           || '';
 
 module.exports = {
   apps: [
@@ -13,19 +21,19 @@ module.exports = {
       watch: false,
       max_memory_restart: '512M',
       env: {
-        NODE_ENV:   'production',
+        NODE_ENV:                'production',
         DEPLOY_DIR,
-        HTTPS_PROXY:              process.env.GLOBAL_AGENT_HTTP_PROXY || process.env.HTTPS_PROXY || '',
-        HTTP_PROXY:               process.env.GLOBAL_AGENT_HTTP_PROXY || process.env.HTTP_PROXY  || '',
-        GLOBAL_AGENT_HTTP_PROXY:  process.env.GLOBAL_AGENT_HTTP_PROXY || '',
+        HTTPS_PROXY:             PROXY,
+        HTTP_PROXY:              PROXY,
+        GLOBAL_AGENT_HTTP_PROXY: PROXY,
       },
-      error_file: `${DEPLOY_DIR}/logs/rv-scheduler-error.log`,
-      out_file:   `${DEPLOY_DIR}/logs/rv-scheduler-out.log`,
+      error_file:      `${DEPLOY_DIR}/logs/rv-scheduler-error.log`,
+      out_file:        `${DEPLOY_DIR}/logs/rv-scheduler-out.log`,
       log_date_format: 'YYYY-MM-DD HH:mm:ss Z',
-      merge_logs: true,
-      restart_delay: 5000,
-      max_restarts: 10,
-      min_uptime: '5s',
+      merge_logs:      true,
+      restart_delay:   5000,
+      max_restarts:    10,
+      min_uptime:      '5s',
     },
     {
       name: 'rv-control',
@@ -36,18 +44,18 @@ module.exports = {
       watch: false,
       max_memory_restart: '256M',
       env: {
-        NODE_ENV:   'production',
+        NODE_ENV:                'production',
         DEPLOY_DIR,
-        HTTPS_PROXY:              process.env.GLOBAL_AGENT_HTTP_PROXY || process.env.HTTPS_PROXY || '',
-        HTTP_PROXY:               process.env.GLOBAL_AGENT_HTTP_PROXY || process.env.HTTP_PROXY  || '',
-        GLOBAL_AGENT_HTTP_PROXY:  process.env.GLOBAL_AGENT_HTTP_PROXY || '',
+        HTTPS_PROXY:             PROXY,
+        HTTP_PROXY:              PROXY,
+        GLOBAL_AGENT_HTTP_PROXY: PROXY,
       },
-      error_file: `${DEPLOY_DIR}/logs/rv-control-error.log`,
-      out_file:   `${DEPLOY_DIR}/logs/rv-control-out.log`,
+      error_file:      `${DEPLOY_DIR}/logs/rv-control-error.log`,
+      out_file:        `${DEPLOY_DIR}/logs/rv-control-out.log`,
       log_date_format: 'YYYY-MM-DD HH:mm:ss Z',
-      merge_logs: true,
-      restart_delay: 3000,
-      min_uptime: '5s',
+      merge_logs:      true,
+      restart_delay:   3000,
+      min_uptime:      '5s',
     },
   ],
 };
