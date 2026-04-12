@@ -10,7 +10,8 @@ class BrandVoiceAuditor extends BaseAgent {
       name:      'Brand Voice Auditor',
       role:      'You are a brand strategist and copy editor responsible for maintaining ResidualVault\'s consistent brand voice across all content. You ensure every piece of communication is aligned with the brand guidelines, tone, and messaging hierarchy.',
       model:     'claude-opus-4-5',
-      schedule:  '0 9 * * *',   // Daily at 9 AM
+      schedule:  '15 7 * * 0',   // Daily at 9 AM
+      timezone:  'America/Denver',
       maxTokens: 4096,
     });
 

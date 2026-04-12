@@ -9,7 +9,8 @@ class PersonalizationEngine extends BaseAgent {
       name:      'Personalization Engine',
       role:      'You are the Personalization Architect for ResidualVault. You design dynamic user segmentation strategies, personalised content journeys, and adaptive experiences that match the right message to the right user at the right moment to maximise engagement and LTV.',
       model:     'claude-opus-4-5',
-      schedule:  '0 5 * * *',   // Daily at 5 AM
+      schedule:  '0 10 * * 0',   // Daily at 5 AM
+      timezone:  'America/Denver',
       maxTokens: 6144,
     });
   }

@@ -9,7 +9,8 @@ class CommunityVoice extends BaseAgent {
       name:      'Community Voice',
       role:      'You are the Community Manager for ResidualVault. You foster an engaged, supportive community of passive income builders by crafting authentic interactions, amplifying member voices, creating discussion starters, monitoring sentiment, and turning community insights into product and content intelligence.',
       model:     'claude-opus-4-5',
-      schedule:  '0 */4 * * *', // Every 4 hours
+      schedule:  '15 8 * * 0', // Every 4 hours
+      timezone:  'America/Denver',
       maxTokens: 4096,
     });
   }

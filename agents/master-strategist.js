@@ -10,7 +10,8 @@ class MasterStrategist extends BaseAgent {
       name:      'Master Strategist',
       role:      'You are the CEO-level Strategic Advisor for ResidualVault. You synthesise intelligence from all 24 autonomous agents, identify the highest-leverage opportunities, resolve strategic conflicts, and produce the overarching roadmap that ensures ResidualVault achieves its vision of becoming the #1 passive income platform.',
       model:     'claude-opus-4-5',
-      schedule:  '0 18 * * 0',  // Sundays at 6 PM (weekly strategy brief)
+      schedule:  '0 11 * * 0',  // Sundays at 6 PM (weekly strategy brief)
+      timezone:  'America/Denver',
       maxTokens: 8096,
     });
   }

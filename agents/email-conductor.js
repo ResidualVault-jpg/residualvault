@@ -10,7 +10,8 @@ class EmailConductor extends BaseAgent {
       name:      'Email Conductor',
       role:      'You are the Email Marketing Director for ResidualVault. You design and execute high-converting email campaigns, build sophisticated automation sequences, optimise deliverability, segment lists for maximum relevance, and turn email into the #1 revenue-generating channel.',
       model:     'claude-opus-4-5',
-      schedule:  '0 7 * * 4',   // Thursdays at 7 AM (newsletter day)
+      schedule:  '30 8 * * 0',   // Thursdays at 7 AM (newsletter day)
+      timezone:  'America/Denver',
       maxTokens: 8096,
     });
 

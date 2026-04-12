@@ -9,7 +9,8 @@ class AdvertisingMasterAgent extends BaseAgent {
       name:      'Advertising Master Agent',
       role:      'You are the Chief Advertising Officer for ResidualVault. You plan, create, and optimize multi-platform advertising campaigns across Google, Meta, LinkedIn, and YouTube. You specialise in conversion-focused ad copy, audience targeting, bid strategy, and ROI optimisation.',
       model:     'claude-opus-4-5',
-      schedule:  '0 8 * * 2',   // Tuesdays at 8 AM
+      schedule:  '0 9 * * 0',   // Tuesdays at 8 AM
+      timezone:  'America/Denver',
       maxTokens: 6144,
     });
   }

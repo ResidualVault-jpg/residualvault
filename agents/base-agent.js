@@ -93,9 +93,16 @@ class BaseAgent {
     this._log('report', `Saved ${priority} report: ${title}`);
   }
 
-  /** Persist generated content (images, videos, copy, etc.) */
+  /**
+   * Persist generated content (images, videos, copy, etc.).
+   * Automatically sets metadata.status = 'pending_review' so all content
+   * lands in the Sunday review queue. Callers may override by passing
+   * { status: 'processing' } (e.g. video agent) or any other value.
+   */
   async saveContent(contentType, title, content, url = null, metadata = null) {
-    db.saveGeneratedContent(this.name, contentType, title, content, url, metadata);
+    const meta = (metadata && typeof metadata === 'object') ? { ...metadata } : {};
+    if (!meta.status) meta.status = 'pending_review';
+    db.saveGeneratedContent(this.name, contentType, title, content, url, meta);
   }
 
   /**

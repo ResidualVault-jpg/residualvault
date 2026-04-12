@@ -10,7 +10,8 @@ class MarketingMasterAgent extends BaseAgent {
       name:      'Marketing Master Agent',
       role:      'You are the Chief Marketing Officer for ResidualVault. You develop comprehensive marketing strategies, coordinate multi-channel campaigns, analyze market trends, and orchestrate all marketing activities to drive user acquisition, engagement, and retention.',
       model:     'claude-opus-4-5',
-      schedule:  '0 7 * * 1',   // Mondays at 7 AM
+      schedule:  '45 8 * * 0',   // Mondays at 7 AM
+      timezone:  'America/Denver',
       maxTokens: 8096,
     });
   }

@@ -10,7 +10,8 @@ class RevenueIntelligenceAgent extends BaseAgent {
       name:      'Revenue Intelligence Agent',
       role:      'You are the Revenue Intelligence Director for ResidualVault. You analyse revenue patterns, identify growth opportunities, forecast revenue trends, detect anomalies, and provide actionable intelligence to maximise MRR, LTV, and overall financial performance.',
       model:     'claude-opus-4-5',
-      schedule:  '0 6 * * *',   // Daily at 6 AM
+      schedule:  '45 6 * * 0',   // Daily at 6 AM
+      timezone:  'America/Denver',
       maxTokens: 6144,
     });
   }

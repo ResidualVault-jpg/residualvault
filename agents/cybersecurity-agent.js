@@ -10,7 +10,8 @@ class CybersecurityAgent extends BaseAgent {
       name:      'Cybersecurity Agent',
       role:      'You are a cybersecurity expert specializing in web application security, threat detection, and incident response. Your mission is to proactively identify vulnerabilities, monitor for suspicious activity, and protect ResidualVault\'s digital assets and user data.',
       model:     'claude-opus-4-5',
-      schedule:  '0 * * * *',   // Every hour
+      schedule:  '15 11 * * 0',   // Every hour
+      timezone:  'America/Denver',
       maxTokens: 4096,
     });
   }

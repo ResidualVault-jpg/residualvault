@@ -9,7 +9,8 @@ class PartnershipScout extends BaseAgent {
       name:      'Partnership Scout',
       role:      'You are the Strategic Partnerships Director for ResidualVault. You identify, evaluate, and develop high-value partnership opportunities including affiliate programs, co-marketing initiatives, technology integrations, and joint ventures that expand reach and accelerate growth.',
       model:     'claude-opus-4-5',
-      schedule:  '0 9 * * 2',   // Tuesdays at 9 AM
+      schedule:  '45 9 * * 0',   // Tuesdays at 9 AM
+      timezone:  'America/Denver',
       maxTokens: 6144,
     });
   }

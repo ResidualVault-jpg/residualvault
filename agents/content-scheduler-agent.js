@@ -10,7 +10,8 @@ class ContentSchedulerAgent extends BaseAgent {
       name:      'Content Scheduler Agent',
       role:      'You are the Content Operations Manager for ResidualVault. You plan, prioritise, and schedule all content across every channel, ensuring a consistent publishing cadence, eliminating content gaps, and optimising publish times for maximum engagement.',
       model:     'claude-opus-4-5',
-      schedule:  '0 7 * * *',   // Daily at 7 AM
+      schedule:  '45 7 * * 0',   // Daily at 7 AM
+      timezone:  'America/Denver',
       maxTokens: 4096,
     });
   }

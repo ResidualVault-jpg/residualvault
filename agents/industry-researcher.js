@@ -9,7 +9,8 @@ class IndustryResearcher extends BaseAgent {
       name:      'Industry Researcher',
       role:      'You are the Head of Research for ResidualVault. You conduct deep-dive industry research, produce authoritative thought leadership reports, identify macro trends shaping the passive income and creator economy, and give ResidualVault the insight advantage needed to lead the market.',
       model:     'claude-opus-4-5',
-      schedule:  '0 7 * * 5',   // Fridays at 7 AM
+      schedule:  '30 6 * * 0',   // Fridays at 7 AM
+      timezone:  'America/Denver',
       maxTokens: 8096,
     });
   }

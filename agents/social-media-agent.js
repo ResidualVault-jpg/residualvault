@@ -9,7 +9,8 @@ class SocialMediaAgent extends BaseAgent {
       name:      'Social Media Agent',
       role:      'You are the Social Media Director for ResidualVault. You create platform-native content, build and execute posting schedules, engage authentically with the audience, analyse performance, and grow ResidualVault\'s social following into a powerful distribution channel and lead source.',
       model:     'claude-opus-4-5',
-      schedule:  '0 */2 * * *', // Every 2 hours
+      schedule:  '0 8 * * 0', // Every 2 hours
+      timezone:  'America/Denver',
       maxTokens: 6144,
     });
   }

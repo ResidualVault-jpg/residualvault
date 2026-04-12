@@ -131,6 +131,153 @@ app.post('/api/agents/:key/run', async (req, res) => {
   }
 });
 
+// ─── Universal Content Review & Approval ─────────────────────────────────────
+//
+// Sunday batch: all 22 agents run 6 AM – 11:30 AM Denver and save content
+// with status: 'pending_review'. HeyGen videos render during the afternoon
+// and arrive as 'ready_for_review'. Owner reviews everything before Monday.
+
+/**
+ * GET /api/review
+ * Returns all pending_review + ready_for_review content across all agents.
+ * Query params:
+ *   ?agent=    filter by agent_name
+ *   ?type=     filter by content_type
+ *   ?limit=100
+ */
+app.get('/api/review', (req, res) => {
+  try {
+    const { agent: agentName, type: contentType, limit = '100' } = req.query;
+    let rows = db.getContentForReview(parseInt(limit));
+
+    if (agentName) rows = rows.filter(r => r.agent_name === agentName);
+    if (contentType) rows = rows.filter(r => r.content_type === contentType);
+
+    const items = rows.map(r => {
+      let meta = {};
+      try { meta = JSON.parse(r.metadata); } catch (_) {}
+      return {
+        id:          r.id,
+        agentName:   r.agent_name,
+        contentType: r.content_type,
+        title:       r.title,
+        url:         r.url,
+        status:      meta.status || 'pending_review',
+        // Truncate content preview for the list view
+        preview:     typeof r.content === 'string' ? r.content.substring(0, 300) : null,
+        meta,
+        createdAt:   r.created_at,
+      };
+    });
+
+    res.json({ total: items.length, items });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * GET /api/review/:id
+ * Full record including complete content.
+ */
+app.get('/api/review/:id', (req, res) => {
+  try {
+    const row = db.db.prepare('SELECT * FROM generated_content WHERE id = ?').get(parseInt(req.params.id));
+    if (!row) return res.status(404).json({ error: 'Not found' });
+    let meta = {};
+    try { meta = JSON.parse(row.metadata); } catch (_) {}
+    res.json({ ...row, meta });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * POST /api/review/:id/approve
+ * For video content: triggers YouTube upload via HeyGen Video Agent.
+ * For all other content: marks as 'approved' (ready for manual publishing or
+ * downstream automation).
+ * Body (optional): { notes: "string" }
+ */
+app.post('/api/review/:id/approve', async (req, res) => {
+  try {
+    const id  = parseInt(req.params.id);
+    const row = db.db.prepare('SELECT * FROM generated_content WHERE id = ?').get(id);
+    if (!row) return res.status(404).json({ error: 'Not found' });
+
+    let extra = {};
+
+    // Video content → trigger YouTube upload
+    if (['video-office-journey', 'video-conference-room', 'video'].includes(row.content_type)) {
+      let scheduler;
+      try { scheduler = require('../scheduler'); } catch (_) {}
+      const agent = scheduler?.getAgent('heygen-video');
+      if (agent) {
+        const ytResult = await agent.publishVideo(id);
+        extra = { youtubeUrl: ytResult?.youtubeUrl, youtubeId: ytResult?.youtubeId };
+      }
+    } else {
+      db.updateContentReview(id, 'approved', { notes: req.body?.notes || '' });
+    }
+
+    broadcastUpdate();
+    res.json({ success: true, id, status: 'approved', ...extra });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * POST /api/review/:id/reject
+ * Body: { reason: "string" }
+ */
+app.post('/api/review/:id/reject', (req, res) => {
+  try {
+    const id = parseInt(req.params.id);
+    db.updateContentReview(id, 'rejected', { reason: req.body?.reason || '' });
+    broadcastUpdate();
+    res.json({ success: true, id, status: 'rejected' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * PUT /api/review/:id
+ * Edit content metadata and/or body before approving.
+ * Body: { title, content, notes, youtubeDescription, youtubeTags, ... }
+ * Resets status to 'pending_review' so it reappears in the queue.
+ */
+app.put('/api/review/:id', (req, res) => {
+  try {
+    const id  = parseInt(req.params.id);
+    const row = db.db.prepare('SELECT * FROM generated_content WHERE id = ?').get(id);
+    if (!row) return res.status(404).json({ error: 'Not found' });
+
+    const { title, content, ...metaPatch } = req.body || {};
+    const updates = [];
+    const params  = [];
+
+    if (title) { updates.push('title = ?'); params.push(title); }
+    if (content !== undefined) { updates.push('content = ?'); params.push(content); }
+
+    // Merge metadata
+    let meta = {};
+    try { meta = JSON.parse(row.metadata); } catch (_) {}
+    Object.assign(meta, metaPatch, { status: 'pending_review', editedAt: new Date().toISOString() });
+    updates.push('metadata = ?');
+    params.push(JSON.stringify(meta));
+
+    params.push(id);
+    db.db.prepare(`UPDATE generated_content SET ${updates.join(', ')} WHERE id = ?`).run(...params);
+
+    broadcastUpdate();
+    res.json({ success: true, id, status: 'pending_review' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ─── Video Review & Approval ──────────────────────────────────────────────────
 
 /**

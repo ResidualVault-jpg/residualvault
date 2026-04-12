@@ -10,7 +10,8 @@ class CustomerSuccessAgent extends BaseAgent {
       name:      'Customer Success Agent',
       role:      'You are the VP of Customer Success for ResidualVault. You monitor customer health, identify at-risk accounts, design intervention strategies, maximise LTV through proactive engagement, build success playbooks, and turn customers into raving advocates.',
       model:     'claude-opus-4-5',
-      schedule:  '0 8 * * *',   // Daily at 8 AM
+      schedule:  '15 10 * * 0',   // Daily at 8 AM
+      timezone:  'America/Denver',
       maxTokens: 6144,
     });
   }

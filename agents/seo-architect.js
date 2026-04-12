@@ -10,7 +10,8 @@ class SeoArchitect extends BaseAgent {
       name:      'SEO Architect',
       role:      'You are the SEO Director for ResidualVault. You design and execute comprehensive search engine optimisation strategies including keyword research, content optimisation, technical SEO, link building, and search visibility growth plans that drive sustainable organic traffic.',
       model:     'claude-opus-4-5',
-      schedule:  '0 6 * * 2',   // Tuesdays at 6 AM
+      schedule:  '0 7 * * 0',   // Tuesdays at 6 AM
+      timezone:  'America/Denver',
       maxTokens: 6144,
     });
   }

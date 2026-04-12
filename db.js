@@ -262,6 +262,41 @@ function getDashboardSummary() {
   };
 }
 
+// ─── Content Review ───────────────────────────────────────────────────────────
+
+/**
+ * Update the review status of a generated_content record.
+ * Merges the patch into the existing metadata JSON.
+ *
+ * @param {number} id        - generated_content.id
+ * @param {string} status    - 'approved' | 'rejected' | 'pending_review' | 'live'
+ * @param {object} [patch]   - additional metadata fields to merge
+ */
+function updateContentReview(id, status, patch = {}) {
+  const row = db.prepare('SELECT metadata FROM generated_content WHERE id = ?').get(id);
+  if (!row) throw new Error(`Content record ${id} not found`);
+  let meta = {};
+  try { meta = JSON.parse(row.metadata); } catch (_) {}
+  Object.assign(meta, patch, { status, reviewedAt: new Date().toISOString() });
+  db.prepare('UPDATE generated_content SET metadata = ? WHERE id = ?')
+    .run(JSON.stringify(meta), id);
+  return meta;
+}
+
+/**
+ * Fetch content records pending review (status = 'pending_review' | 'ready_for_review').
+ */
+function getContentForReview(limit = 100) {
+  return db.prepare(`
+    SELECT id, agent_name, content_type, title, url, metadata, created_at
+    FROM   generated_content
+    WHERE  metadata LIKE '%"status":"pending_review"%'
+       OR  metadata LIKE '%"status":"ready_for_review"%'
+    ORDER  BY created_at DESC
+    LIMIT  ?
+  `).all(limit);
+}
+
 module.exports = {
   db,
   logAgentActivity,
@@ -274,6 +309,8 @@ module.exports = {
   resolveAlert,
   saveGeneratedContent,
   getGeneratedContent,
+  updateContentReview,
+  getContentForReview,
   getRecentLogs,
   getDashboardSummary,
 };
