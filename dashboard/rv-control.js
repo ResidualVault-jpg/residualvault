@@ -458,6 +458,31 @@ function broadcastUpdate() {
 // Periodic broadcast every 30 seconds
 setInterval(broadcastUpdate, 30000);
 
+// ─── Deploy Webhook ───────────────────────────────────────────────────────────
+// POST /api/deploy  { "token": "<DEPLOY_TOKEN>" }
+// Pulls latest code from git and restarts PM2 processes.
+const { execSync } = require('child_process');
+const DEPLOY_TOKEN = process.env.DEPLOY_TOKEN || 'rv-deploy-2025';
+const DEPLOY_DIR   = process.env.DEPLOY_DIR   || require('path').join(__dirname, '..');
+
+app.post('/api/deploy', (req, res) => {
+  if (req.body.token !== DEPLOY_TOKEN) return res.status(403).json({ error: 'Forbidden' });
+  res.json({ status: 'deploying', message: 'Pull started — check back in 15s' });
+  // Run async after response is sent
+  setImmediate(() => {
+    try {
+      execSync(
+        `cd ${DEPLOY_DIR} && git fetch origin claude/build-ai-agent-system-e0Lfr && git checkout claude/build-ai-agent-system-e0Lfr && git pull origin claude/build-ai-agent-system-e0Lfr`,
+        { stdio: 'inherit', timeout: 60000 }
+      );
+      // Restart rv-control (self) via PM2 — will kill this process
+      execSync('pm2 restart rv-control', { stdio: 'inherit', timeout: 30000 });
+    } catch (e) {
+      console.error('[deploy] Error:', e.message);
+    }
+  });
+});
+
 // ─── Export / Start ────────────────────────────────────────────────────────────
 
 async function start() {
