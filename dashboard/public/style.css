@@ -629,3 +629,198 @@ body {
     grid-column: 1; grid-row: auto;
   }
 }
+
+/* ── Sunday Review Queue ─────────────────────────────────────────── */
+
+.panel--review {
+  margin: 16px 24px 0;
+  border-left: 3px solid var(--gold-dim);
+}
+
+.badge--gold {
+  background: rgba(240,180,41,0.15);
+  border-color: var(--gold-dim);
+  color: var(--gold);
+}
+
+.review-body {
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  max-height: 640px;
+  overflow-y: auto;
+}
+
+.review-empty {
+  padding: 32px;
+  text-align: center;
+  color: var(--green);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.review-group + .review-group { margin-top: 8px; }
+
+.review-group-header {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: var(--text-faint);
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 10px;
+}
+
+.review-item {
+  background: var(--bg-card2);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--gold-dim);
+  border-radius: var(--radius);
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  transition: border-color 0.15s;
+  margin-bottom: 8px;
+}
+.review-item:hover { border-left-color: var(--gold); }
+
+.review-item-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.review-type-badge {
+  display: inline-block;
+  font-size: 9px;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  background: rgba(99,179,237,0.15);
+  color: var(--blue);
+  white-space: nowrap;
+}
+
+.review-item-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  flex: 1;
+}
+
+.review-status-badge {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 99px;
+  white-space: nowrap;
+}
+.review-status-badge.status--pending_review   { background: rgba(246,173,85,0.15);  color: var(--orange); }
+.review-status-badge.status--ready_for_review { background: rgba(72,187,120,0.15);  color: var(--green);  }
+
+.review-preview {
+  font-size: 11px;
+  color: var(--text-dim);
+  line-height: 1.55;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 4;
+  -webkit-box-orient: vertical;
+}
+
+.review-item-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+  flex-wrap: wrap;
+}
+
+.btn-approve, .btn-reject, .btn-edit {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 4px 12px;
+  border-radius: 5px;
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.btn-approve:hover { background: var(--green);    border-color: var(--green);    color: #000; }
+.btn-reject:hover  { background: var(--red);      border-color: var(--red);      color: #000; }
+.btn-edit:hover    { background: var(--gold-dim); border-color: var(--gold-dim); color: #000; }
+
+.reject-reason-form {
+  display: none;
+  gap: 8px;
+  align-items: center;
+  margin-top: 4px;
+  flex-wrap: wrap;
+}
+.reject-reason-form.visible { display: flex; }
+
+.reject-reason-input {
+  flex: 1;
+  min-width: 180px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  padding: 5px 10px;
+  font-size: 12px;
+  outline: none;
+}
+.reject-reason-input:focus { border-color: var(--red); }
+
+.btn-reject-confirm {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 4px 12px;
+  border-radius: 5px;
+  background: var(--red);
+  border: 1px solid var(--red);
+  color: #000;
+  cursor: pointer;
+}
+.btn-reject-cancel {
+  font-size: 11px;
+  padding: 4px 10px;
+  border-radius: 5px;
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  cursor: pointer;
+}
+
+.review-edit-field {
+  width: 100%;
+  margin-bottom: 10px;
+  font-size: 14px;
+  box-sizing: border-box;
+}
+
+.review-edit-textarea {
+  width: 100%;
+  min-height: 340px;
+  background: var(--bg-card2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text);
+  padding: 12px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.6;
+  resize: vertical;
+  outline: none;
+  margin-bottom: 14px;
+  box-sizing: border-box;
+  display: block;
+}
+.review-edit-textarea:focus { border-color: var(--gold-dim); }

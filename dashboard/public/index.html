@@ -44,6 +44,22 @@
     </div>
   </section>
 
+  <!-- Sunday Review Queue -->
+  <section class="panel panel--review" id="review-panel">
+    <div class="panel-header">
+      <h2>&#128197; Sunday Review Queue <span class="badge badge--gold" id="review-count">0</span></h2>
+      <div class="panel-actions">
+        <select id="review-agent-filter" class="filter-select">
+          <option value="">All agents</option>
+        </select>
+        <button class="btn btn--sm" id="review-refresh">&#8635; Refresh</button>
+      </div>
+    </div>
+    <div class="review-body" id="review-body">
+      <div class="empty-state">Loading review queue...</div>
+    </div>
+  </section>
+
   <div class="main-grid">
     <!-- Agent Grid -->
     <section class="panel panel--agents">
@@ -153,6 +169,27 @@
       </div>
       <div class="modal-body">
         <pre class="report-content" id="report-modal-content"></pre>
+      </div>
+    </div>
+  </div>
+
+  <!-- Review Edit Modal -->
+  <div class="modal" id="review-edit-modal">
+    <div class="modal-overlay" id="review-edit-overlay"></div>
+    <div class="modal-box modal-box--wide">
+      <div class="modal-header">
+        <h3>Edit Content</h3>
+        <button class="modal-close" id="review-edit-close">&times;</button>
+      </div>
+      <div class="modal-body">
+        <label style="font-size:11px;color:var(--text-dim);text-transform:uppercase;letter-spacing:.5px">Title</label>
+        <input type="text" id="review-edit-title-input" class="search-input review-edit-field" placeholder="Title..." />
+        <label style="font-size:11px;color:var(--text-dim);text-transform:uppercase;letter-spacing:.5px;margin-top:12px;display:block">Content</label>
+        <textarea id="review-edit-body" class="review-edit-textarea" placeholder="Content body..."></textarea>
+        <div class="modal-actions">
+          <button class="btn btn--primary" id="review-edit-save">Save &amp; Re-queue</button>
+          <button class="btn btn--ghost" id="review-edit-cancel">Cancel</button>
+        </div>
       </div>
     </div>
   </div>

@@ -496,3 +496,178 @@ initialLoad();
 
 // Periodic refresh every 60s as fallback
 setInterval(initialLoad, 60000);
+
+// ─── Sunday Review Queue ──────────────────────────────────────────────────────
+
+state.review       = [];
+state.reviewEditId = null;
+
+async function loadReviewQueue() {
+  try {
+    const res  = await fetch('/api/review?limit=200');
+    const data = await res.json();
+    state.review = data.items || [];
+    renderReviewQueue();
+  } catch (err) {
+    console.warn('Review queue load failed:', err.message);
+  }
+}
+
+function renderReviewQueue() {
+  const agentFilter = document.getElementById('review-agent-filter').value;
+  const items = agentFilter
+    ? state.review.filter(r => r.agentName === agentFilter)
+    : state.review;
+
+  document.getElementById('review-count').textContent = items.length;
+
+  // Populate agent filter dropdown
+  const allAgents = [...new Set(state.review.map(r => r.agentName))].sort();
+  const sel = document.getElementById('review-agent-filter');
+  const cur = sel.value;
+  sel.innerHTML = '<option value="">All agents</option>';
+  allAgents.forEach(name => {
+    const opt = document.createElement('option');
+    opt.value = name; opt.textContent = name;
+    if (name === cur) opt.selected = true;
+    sel.appendChild(opt);
+  });
+
+  const body = document.getElementById('review-body');
+
+  if (!items.length) {
+    body.innerHTML = '<div class="review-empty">&#10003; All content reviewed — ready for the week!</div>';
+    return;
+  }
+
+  // Group by agent
+  const groups = {};
+  for (const item of items) {
+    if (!groups[item.agentName]) groups[item.agentName] = [];
+    groups[item.agentName].push(item);
+  }
+
+  body.innerHTML = Object.entries(groups).map(([agent, groupItems]) => `
+    <div class="review-group">
+      <div class="review-group-header">${esc(agent)} &bull; ${groupItems.length} item${groupItems.length !== 1 ? 's' : ''}</div>
+      ${groupItems.map(item => `
+        <div class="review-item" data-id="${item.id}">
+          <div class="review-item-header">
+            <span class="review-type-badge">${esc(item.contentType)}</span>
+            <div class="review-item-title">${esc(item.title || '(untitled)')}</div>
+            <span class="review-status-badge status--${item.status}">${item.status.replace(/_/g,' ')}</span>
+          </div>
+          ${item.preview ? `<div class="review-preview">${esc(item.preview)}</div>` : ''}
+          <div class="review-item-actions">
+            <button class="btn-approve" data-id="${item.id}">&#10003; Approve</button>
+            <button class="btn-reject"  data-id="${item.id}">&#10007; Reject</button>
+            <button class="btn-edit"    data-id="${item.id}">&#9998; Edit</button>
+            <span style="font-size:10px;color:var(--text-faint)">${relativeTime(item.createdAt)}</span>
+          </div>
+          <div class="reject-reason-form" id="reject-form-${item.id}">
+            <input class="reject-reason-input" id="reject-input-${item.id}" placeholder="Reason (optional)..." />
+            <button class="btn-reject-confirm" data-id="${item.id}">Confirm Reject</button>
+            <button class="btn-reject-cancel"  data-id="${item.id}">Cancel</button>
+          </div>
+        </div>
+      `).join('')}
+    </div>
+  `).join('');
+
+  body.querySelectorAll('.btn-approve').forEach(btn =>
+    btn.addEventListener('click', () => approveReviewItem(parseInt(btn.dataset.id)))
+  );
+  body.querySelectorAll('.btn-reject').forEach(btn =>
+    btn.addEventListener('click', () => {
+      document.getElementById(`reject-form-${btn.dataset.id}`)?.classList.toggle('visible');
+    })
+  );
+  body.querySelectorAll('.btn-reject-confirm').forEach(btn =>
+    btn.addEventListener('click', () => {
+      const reason = document.getElementById(`reject-input-${btn.dataset.id}`)?.value || '';
+      rejectReviewItem(parseInt(btn.dataset.id), reason);
+    })
+  );
+  body.querySelectorAll('.btn-reject-cancel').forEach(btn =>
+    btn.addEventListener('click', () => {
+      document.getElementById(`reject-form-${btn.dataset.id}`)?.classList.remove('visible');
+    })
+  );
+  body.querySelectorAll('.btn-edit').forEach(btn =>
+    btn.addEventListener('click', () => openReviewEdit(parseInt(btn.dataset.id)))
+  );
+}
+
+async function approveReviewItem(id) {
+  state.review = state.review.filter(r => r.id !== id);
+  renderReviewQueue();
+  try {
+    const res  = await fetch(`/api/review/${id}/approve`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: '{}' });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Approve failed');
+    showToast('&#10003; Approved' + (data.youtubeUrl ? ' & uploaded to YouTube' : ''));
+  } catch (err) { showToast('&#9888; ' + err.message, true); loadReviewQueue(); }
+}
+
+async function rejectReviewItem(id, reason) {
+  state.review = state.review.filter(r => r.id !== id);
+  renderReviewQueue();
+  try {
+    const res  = await fetch(`/api/review/${id}/reject`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ reason }) });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Reject failed');
+    showToast('&#10007; Rejected');
+  } catch (err) { showToast('&#9888; ' + err.message, true); loadReviewQueue(); }
+}
+
+async function openReviewEdit(id) {
+  state.reviewEditId = id;
+  document.getElementById('review-edit-title-input').value = '';
+  document.getElementById('review-edit-body').value = 'Loading...';
+  document.getElementById('review-edit-modal').classList.add('open');
+  try {
+    const res  = await fetch(`/api/review/${id}`);
+    const data = await res.json();
+    document.getElementById('review-edit-title-input').value = data.title || '';
+    let body = data.content || '';
+    try { body = JSON.stringify(JSON.parse(body), null, 2); } catch (_) {}
+    document.getElementById('review-edit-body').value = body;
+  } catch (err) {
+    document.getElementById('review-edit-body').value = 'Error: ' + err.message;
+  }
+}
+
+function closeReviewEdit() {
+  document.getElementById('review-edit-modal').classList.remove('open');
+  state.reviewEditId = null;
+}
+
+document.getElementById('review-edit-save').addEventListener('click', async () => {
+  const id = state.reviewEditId; if (!id) return;
+  const btn = document.getElementById('review-edit-save');
+  btn.textContent = 'Saving...'; btn.disabled = true;
+  try {
+    const title   = document.getElementById('review-edit-title-input').value.trim();
+    const content = document.getElementById('review-edit-body').value;
+    const res  = await fetch(`/api/review/${id}`, { method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ title, content }) });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Save failed');
+    showToast('&#9998; Saved — back in queue');
+    closeReviewEdit(); loadReviewQueue();
+  } catch (err) { showToast('&#9888; ' + err.message, true); }
+  finally { btn.textContent = 'Save & Re-queue'; btn.disabled = false; }
+});
+
+document.getElementById('review-edit-cancel').addEventListener('click',  closeReviewEdit);
+document.getElementById('review-edit-close').addEventListener('click',   closeReviewEdit);
+document.getElementById('review-edit-overlay').addEventListener('click', closeReviewEdit);
+document.getElementById('review-refresh').addEventListener('click',      loadReviewQueue);
+document.getElementById('review-agent-filter').addEventListener('change', renderReviewQueue);
+
+// Hook Escape key to also close edit modal
+const _origKeydown = document.onkeydown;
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeReviewEdit(); });
+
+// Load immediately + poll every 30 s
+loadReviewQueue();
+setInterval(loadReviewQueue, 30000);
