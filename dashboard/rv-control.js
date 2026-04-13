@@ -17,6 +17,17 @@ const SECRET = process.env.DASHBOARD_SECRET || null;
 // ─── Middleware ────────────────────────────────────────────────────────────────
 
 app.use(express.json());
+
+// Prevent HTML caching so new deployments are picked up immediately
+app.use((req, res, next) => {
+  if (req.path === '/' || req.path.endsWith('.html')) {
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
+  }
+  next();
+});
+
 app.use(express.static(path.join(__dirname, 'public')));
 
 // Optional IP allowlist
