@@ -10,3 +10,4 @@ logs/*.gz
 dist/
 coverage/
 .github/
+video/models/
