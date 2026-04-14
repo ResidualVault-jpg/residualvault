@@ -102,7 +102,7 @@ class BaseAgent {
   async saveContent(contentType, title, content, url = null, metadata = null) {
     const meta = (metadata && typeof metadata === 'object') ? { ...metadata } : {};
     if (!meta.status) meta.status = 'pending_review';
-    db.saveGeneratedContent(this.name, contentType, title, content, url, meta);
+    await db.saveGeneratedContent(this.name, contentType, title, content, url, meta);
   }
 
   /**
