@@ -20,7 +20,7 @@ const state = {
 
 // ─── Socket.IO ────────────────────────────────────────────────────────────────
 
-const socket = io({ transports: ['websocket', 'polling'] });
+const socket = io({ path: '/rv-control/socket.io', transports: ['websocket', 'polling'] });
 
 socket.on('connect', () => {
   state.connected = true;
@@ -196,7 +196,7 @@ function resolveAlert(id) {
   renderAlerts(state.alerts);
 
   // Also hit REST endpoint
-  fetch(`/api/alerts/${id}/resolve`, { method: 'POST' }).catch(() => {});
+  fetch(`/rv-control/api/alerts/${id}/resolve`, { method: 'POST' }).catch(() => {});
 }
 
 // ─── Log Stream ───────────────────────────────────────────────────────────────
@@ -348,7 +348,7 @@ document.getElementById('modal-confirm').addEventListener('click', async () => {
   btn.disabled = true;
 
   try {
-    const res = await fetch(`/api/agents/${key}/run`, {
+    const res = await fetch(`/rv-control/api/agents/${key}/run`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({}),
@@ -477,7 +477,7 @@ document.addEventListener('keydown', (e) => {
 
 async function initialLoad() {
   try {
-    const res  = await fetch('/api/summary');
+    const res  = await fetch('/rv-control/api/summary');
     const data = await res.json();
     state.summary = data;
     renderSummaryCards(data.summary);
@@ -504,7 +504,7 @@ state.reviewEditId = null;
 
 async function loadReviewQueue() {
   try {
-    const res  = await fetch('/api/review?limit=200');
+    const res  = await fetch('/rv-control/api/review?limit=200');
     const data = await res.json();
     state.review = data.items || [];
     renderReviewQueue();
@@ -602,7 +602,7 @@ async function approveReviewItem(id) {
   state.review = state.review.filter(r => r.id !== id);
   renderReviewQueue();
   try {
-    const res  = await fetch(`/api/review/${id}/approve`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: '{}' });
+    const res  = await fetch(`/rv-control/api/review/${id}/approve`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: '{}' });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Approve failed');
     showToast('&#10003; Approved' + (data.youtubeUrl ? ' & uploaded to YouTube' : ''));
@@ -613,7 +613,7 @@ async function rejectReviewItem(id, reason) {
   state.review = state.review.filter(r => r.id !== id);
   renderReviewQueue();
   try {
-    const res  = await fetch(`/api/review/${id}/reject`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ reason }) });
+    const res  = await fetch(`/rv-control/api/review/${id}/reject`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ reason }) });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Reject failed');
     showToast('&#10007; Rejected');
@@ -626,7 +626,7 @@ async function openReviewEdit(id) {
   document.getElementById('review-edit-body').value = 'Loading...';
   document.getElementById('review-edit-modal').classList.add('open');
   try {
-    const res  = await fetch(`/api/review/${id}`);
+    const res  = await fetch(`/rv-control/api/review/${id}`);
     const data = await res.json();
     document.getElementById('review-edit-title-input').value = data.title || '';
     let body = data.content || '';
@@ -649,7 +649,7 @@ document.getElementById('review-edit-save').addEventListener('click', async () =
   try {
     const title   = document.getElementById('review-edit-title-input').value.trim();
     const content = document.getElementById('review-edit-body').value;
-    const res  = await fetch(`/api/review/${id}`, { method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ title, content }) });
+    const res  = await fetch(`/rv-control/api/review/${id}`, { method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ title, content }) });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Save failed');
     showToast('&#9998; Saved — back in queue');
