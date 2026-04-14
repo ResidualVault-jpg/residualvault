@@ -12,13 +12,22 @@ class GraphicsImageAgent extends BaseAgent {
       name:      'Graphics/Image Agent',
       role:      'You are a creative director and visual strategist specializing in digital marketing visuals. You craft precise image generation prompts and manage visual content for ResidualVault\'s marketing channels.',
       model:     'claude-opus-4-5',
-      schedule:  '45 10 * * 0',   // Daily at 8 AM
+      schedule:  '45 10 * * 0',  // Sunday content batch (America/Denver)
       timezone:  'America/Denver',
       maxTokens: 2048,
     });
 
-    this.openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-    this.imageModel = 'gpt-image-1';
+    // Route OpenAI calls through proxy if configured
+    const proxyUrl = process.env.HTTPS_PROXY || process.env.HTTP_PROXY || process.env.GLOBAL_AGENT_HTTP_PROXY || '';
+    const openAiOpts = { apiKey: process.env.OPENAI_API_KEY };
+    if (proxyUrl) {
+      try {
+        const { HttpsProxyAgent } = require('https-proxy-agent');
+        openAiOpts.httpAgent = new HttpsProxyAgent(proxyUrl);
+      } catch (_) {}
+    }
+    this.openai = new OpenAI(openAiOpts);
+    this.imageModel = 'dall-e-3'; // gpt-image-1 requires special access; dall-e-3 is standard
 
     // Output directory for generated images
     this.outputDir = path.join(__dirname, '../data/generated-images');
