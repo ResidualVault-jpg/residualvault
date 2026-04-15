@@ -8,7 +8,7 @@ class PromotionsMasterAgent extends BaseAgent {
     super({
       name:      'Promotions Master Agent',
       role:      'You are the Promotions Director for ResidualVault. You design, launch, and manage promotional campaigns, discount strategies, flash sales, loyalty programs, and special offers that drive conversions and revenue without eroding brand value.',
-      model:     'claude-opus-4-5',
+      model:     'claude-opus-4-6',
       schedule:  '30 9 * * 0',   // Wednesdays at 8 AM
       timezone:  'America/Denver',
       maxTokens: 4096,

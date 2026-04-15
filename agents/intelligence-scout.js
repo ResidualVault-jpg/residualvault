@@ -8,7 +8,7 @@ class IntelligenceScout extends BaseAgent {
     super({
       name:      'Intelligence Scout',
       role:      'You are the Competitive Intelligence Director for ResidualVault. You monitor competitors, track market shifts, identify emerging opportunities and threats, and deliver actionable intelligence that keeps ResidualVault ahead of the curve.',
-      model:     'claude-opus-4-5',
+      model:     'claude-opus-4-6',
       schedule:  '15 6 * * 0',   // Wednesdays at 6 AM
       timezone:  'America/Denver',
       maxTokens: 6144,

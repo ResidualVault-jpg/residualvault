@@ -9,7 +9,7 @@ class LegalComplianceAgent extends BaseAgent {
     super({
       name:      'Legal & Compliance Guardian',
       role:      'You are a legal and compliance expert specializing in digital marketing law, GDPR, FTC guidelines, copyright, and e-commerce regulations. You review all ResidualVault content and operations for legal risk and ensure full regulatory compliance.',
-      model:     'claude-opus-4-5',
+      model:     'claude-opus-4-6',
       schedule:  '30 10 * * 0',   // Daily at 6 AM
       timezone:  'America/Denver',
       maxTokens: 4096,

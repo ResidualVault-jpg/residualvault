@@ -11,7 +11,7 @@ class GraphicsImageAgent extends BaseAgent {
     super({
       name:      'Graphics/Image Agent',
       role:      'You are a creative director and visual strategist specializing in digital marketing visuals. You craft precise image generation prompts and manage visual content for ResidualVault\'s marketing channels.',
-      model:     'claude-opus-4-5',
+      model:     'claude-opus-4-6',
       schedule:  '45 10 * * 0',  // Sunday content batch (America/Denver)
       timezone:  'America/Denver',
       maxTokens: 2048,

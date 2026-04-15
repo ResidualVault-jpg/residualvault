@@ -39,7 +39,7 @@ class BaseAgent {
   constructor(config) {
     this.name      = config.name;
     this.role      = config.role;
-    this.model     = config.model     || 'claude-opus-4-5';
+    this.model     = config.model     || 'claude-opus-4-6';
     this.schedule  = config.schedule  || '0 * * * *';
     this.timezone  = config.timezone  || 'America/New_York';
     this.maxTokens = config.maxTokens || 4096;

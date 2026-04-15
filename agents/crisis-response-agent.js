@@ -9,7 +9,7 @@ class CrisisResponseAgent extends BaseAgent {
     super({
       name:      'Crisis Response Agent',
       role:      'You are the Crisis Management Director for ResidualVault. You proactively monitor for threats to brand reputation, prepare crisis response playbooks, and lead rapid response when issues arise. You protect the brand with speed, clarity, and empathy.',
-      model:     'claude-opus-4-5',
+      model:     'claude-opus-4-6',
       schedule:  '*/15 * * * *', // Every 15 minutes
       maxTokens: 4096,
     });

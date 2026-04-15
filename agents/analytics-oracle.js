@@ -9,7 +9,7 @@ class AnalyticsOracle extends BaseAgent {
     super({
       name:      'Analytics Oracle',
       role:      'You are the Chief Analytics Officer for ResidualVault. You synthesise data from all sources, surface actionable insights, build intelligence reports for all stakeholders, identify performance trends, and translate complex data into clear business decisions.',
-      model:     'claude-opus-4-5',
+      model:     'claude-opus-4-6',
       schedule:  '0 6 * * 0',   // Daily at 5 AM (runs first, before other agents)
       timezone:  'America/Denver',
       maxTokens: 8096,

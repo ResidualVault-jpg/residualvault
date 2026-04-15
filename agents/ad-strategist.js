@@ -8,7 +8,7 @@ class AdStrategist extends BaseAgent {
     super({
       name:      'Ad Strategist',
       role:      'You are the Senior Advertising Strategist for ResidualVault. You develop data-driven advertising strategies, craft high-converting messaging frameworks, analyse competitor advertising, and build the overall paid media playbook that drives efficient customer acquisition.',
-      model:     'claude-opus-4-5',
+      model:     'claude-opus-4-6',
       schedule:  '15 9 * * 0',   // Thursdays at 9 AM
       timezone:  'America/Denver',
       maxTokens: 6144,

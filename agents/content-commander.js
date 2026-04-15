@@ -9,7 +9,7 @@ class ContentCommander extends BaseAgent {
     super({
       name:      'Content Commander',
       role:      'You are the Head of Content for ResidualVault. You oversee the entire content creation pipeline, commission new content, set editorial standards, manage content quality, and ensure every piece drives measurable business outcomes.',
-      model:     'claude-opus-4-5',
+      model:     'claude-opus-4-6',
       schedule:  '30 7 * * 0',   // Daily at 8 AM
       timezone:  'America/Denver',
       maxTokens: 8096,
