@@ -554,10 +554,11 @@ function renderReviewQueue() {
         <div class="review-item" data-id="${item.id}">
           <div class="review-item-header">
             <span class="review-type-badge">${esc(item.contentType)}</span>
-            <div class="review-item-title">${esc(item.title || '(untitled)')}</div>
+            <div class="review-item-title" style="cursor:pointer;flex:1;" onclick="const d=this.closest('.review-item').querySelector('.full-content'); if(d){d.style.display=d.style.display==='none'?'block':'none';this.style.opacity=d.style.display==='none'?'1':'0.7';}">${esc(item.title || '(untitled)')} <span style="font-size:10px;opacity:0.5;">▼ click to expand</span></div>
             <span class="review-status-badge status--${item.status}">${item.status.replace(/_/g,' ')}</span>
           </div>
-          ${item.preview ? `<div class="review-preview" style="cursor:pointer;max-height:60px;overflow:hidden;transition:max-height 0.3s ease;" onclick="this.style.maxHeight=this.style.maxHeight==='60px'?'2000px':'60px'">${esc(item.preview)}</div>` : ''}
+          <div class="full-content" style="display:none;background:rgba(255,255,255,0.05);padding:12px;border-radius:6px;font-size:12px;white-space:pre-wrap;max-height:500px;overflow-y:auto;margin:8px 0;line-height:1.6;border-left:3px solid #f0a500;">${esc(item.content || item.preview || 'No content available')}</div>
+          ${item.preview ? `<div class="review-preview" style="cursor:pointer;max-height:80px;overflow:hidden;transition:max-height 0.4s ease;padding:8px;background:rgba(255,255,255,0.03);border-radius:4px;margin-bottom:4px;" onclick="this.style.maxHeight=this.style.maxHeight==='80px'?'2000px':'80px';this.nextElementSibling.style.display=this.style.maxHeight==='80px'?'none':'block'">${esc(item.preview)}</div><div style="display:none;background:rgba(255,255,255,0.05);padding:10px;border-radius:6px;font-size:12px;white-space:pre-wrap;max-height:500px;overflow-y:auto;margin-bottom:8px;line-height:1.6;">${esc(item.content || item.preview)}</div>` : ''}
           ${item.content ? `<div class="review-full-content" style="display:none;background:rgba(255,255,255,0.05);padding:10px;margin-top:8px;border-radius:6px;font-size:12px;white-space:pre-wrap;max-height:400px;overflow-y:auto;">${esc(typeof item.content === 'object' ? JSON.stringify(item.content, null, 2) : item.content)}</div>` : ''}
           <div class="review-item-actions">
             <button class="btn-approve" data-id="${item.id}">&#10003; Approve</button>

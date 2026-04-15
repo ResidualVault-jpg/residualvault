@@ -102,7 +102,10 @@ class BaseAgent {
   async saveContent(contentType, title, content, url = null, metadata = null) {
     const meta = (metadata && typeof metadata === 'object') ? { ...metadata } : {};
     if (!meta.status) meta.status = 'pending_review';
-    await db.saveGeneratedContent(this.name, contentType, title, content, url, meta);
+    // Parse content if it's a JSON string so it saves properly
+    let contentToSave = content;
+    try { contentToSave = JSON.parse(content); } catch(_) { contentToSave = content; }
+    await db.saveGeneratedContent(this.name, contentType, title, contentToSave, url, meta);
   }
 
   /**
@@ -182,13 +185,13 @@ class BaseAgent {
     try {
       const result   = await this.execute(context);
       const duration = Date.now() - t0;
-      db.updateAgentMetrics(this.name, 'success', duration);
+      await db.updateAgentMetrics(this.name, { status: 'success', lastRun: new Date().toISOString(), duration, successCount: 1 });
       this._log('complete', `Completed in ${duration}ms`);
       this.status = 'idle';
       return result;
     } catch (err) {
       const duration = Date.now() - t0;
-      db.updateAgentMetrics(this.name, 'failed', duration);
+      await db.updateAgentMetrics(this.name, { status: 'failed', lastRun: new Date().toISOString(), duration, failCount: 1 });
       this._log('error', `Failed after ${duration}ms: ${err.message}`, { stack: err.stack });
       await this.reportIssue('high', `${this.name} Execution Error`, err.message);
       this.status = 'error';

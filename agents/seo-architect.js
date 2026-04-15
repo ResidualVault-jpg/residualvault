@@ -135,7 +135,7 @@ Output JSON:
     }
 
     // Audit recent blog posts
-    const recentPosts = db.getGeneratedContent(10).filter(c => c.content_type === 'blog-post');
+    const recentPosts = await db.getGeneratedContent(10).filter(c => c.content_type === 'blog-post');
     let auditResults  = [];
 
     for (const post of recentPosts.slice(0, 3)) {

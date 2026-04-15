@@ -18,8 +18,9 @@ class MasterStrategist extends BaseAgent {
 
   async synthesiseAgentIntelligence() {
     const summary = db.getDashboardSummary();
-    const reports = db.getReports(30);
-    const alerts  = db.getOpenAlerts();
+    const reportsRaw = await db.getReports(30);
+    const reports = Array.isArray(reportsRaw) ? reportsRaw : [];
+    const alerts  = await db.getOpenAlerts();
     const metrics = db.getAllMetrics();
 
     // Extract key intelligence from recent reports

@@ -120,9 +120,7 @@ Output JSON array:
 
     const platforms = [
       { platform: 'Twitter/X',  count: 5, theme: 'Passive income mindset and quick strategies' },
-      { platform: 'Instagram',  count: 3, theme: 'Visual journey to financial freedom' },
-      { platform: 'LinkedIn',   count: 2, theme: 'Professional growth and entrepreneurship insights' },
-      { platform: 'TikTok',     count: 3, theme: 'Quick passive income tips and behind-the-scenes' },
+      { platform: 'LinkedIn',   count: 3, theme: 'Professional growth and entrepreneurship insights' },
     ];
 
     const results = [];

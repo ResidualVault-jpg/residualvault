@@ -17,8 +17,8 @@ class RevenueIntelligenceAgent extends BaseAgent {
   }
 
   async analyseRevenueTrends() {
-    const metrics = db.getAllMetrics();
-    const reports = db.getReports(20);
+    const metrics = await db.getAllMetrics();
+    const reports = await db.getReports(20);
     const today   = new Date().toISOString().split('T')[0];
 
     return this.ask(`

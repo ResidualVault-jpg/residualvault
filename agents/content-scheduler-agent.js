@@ -17,7 +17,7 @@ class ContentSchedulerAgent extends BaseAgent {
   }
 
   async buildContentCalendar(daysAhead = 7) {
-    const pendingContent = db.getGeneratedContent(20);
+    const pendingContent = await db.getGeneratedContent(20);
     const today = new Date().toISOString().split('T')[0];
 
     return this.ask(`

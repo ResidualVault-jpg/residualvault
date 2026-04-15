@@ -18,8 +18,9 @@ class CrisisResponseAgent extends BaseAgent {
   }
 
   async monitorThreatSignals() {
-    const recentAlerts = db.getOpenAlerts();
-    const recentErrors = db.getRecentLogs(50).filter(l => l.type === 'error');
+    const recentAlerts = await db.getOpenAlerts();
+    const allLogs = await db.getRecentLogs(50);
+    const recentErrors = allLogs.filter(l => l.type === 'error' || l.status === 'error');
 
     const criticalAlerts = recentAlerts.filter(a => a.severity === 'critical');
     const highAlerts     = recentAlerts.filter(a => a.severity === 'high');

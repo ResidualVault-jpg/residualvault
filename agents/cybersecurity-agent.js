@@ -20,8 +20,9 @@ class CybersecurityAgent extends BaseAgent {
     this._log('info', 'Running security audit cycle');
 
     // Gather internal metrics from DB
-    const recentErrors = db.getRecentLogs(200).filter(l => l.type === 'error');
-    const recentAlerts = db.getOpenAlerts();
+    const allLogs = await db.getRecentLogs(200);
+    const recentErrors = allLogs.filter(l => l.type === 'error' || l.status === 'error');
+    const recentAlerts = await db.getOpenAlerts();
 
     const prompt = `
 You are conducting a comprehensive security audit for ResidualVault.

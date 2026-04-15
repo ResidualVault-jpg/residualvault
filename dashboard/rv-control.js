@@ -47,9 +47,9 @@ app.use(ipGuard);
 // ─── REST API ──────────────────────────────────────────────────────────────────
 
 /** GET /api/summary — full dashboard data */
-app.get('/api/summary', (req, res) => {
+app.get('/api/summary', async (req, res) => {
   try {
-    res.json(db.getDashboardSummary());
+    res.json(await db.getDashboardSummary());
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -156,26 +156,70 @@ app.post('/api/agents/:key/run', async (req, res) => {
  *   ?type=     filter by content_type
  *   ?limit=100
  */
-app.get('/api/review', (req, res) => {
+app.get('/api/review', async (req, res) => {
   try {
-    const { agent: agentName, type: contentType, limit = '100' } = req.query;
-    let rows = db.getContentForReview(parseInt(limit));
+    const { agent: agentName, type: contentType, limit = '200' } = req.query;
+    let rows = await db.getContentForReview(parseInt(limit));
 
     if (agentName) rows = rows.filter(r => r.agent_name === agentName);
     if (contentType) rows = rows.filter(r => r.content_type === contentType);
 
     const items = rows.map(r => {
       let meta = {};
-      try { meta = JSON.parse(r.metadata); } catch (_) {}
+      try { meta = typeof r.metadata === 'string' ? JSON.parse(r.metadata) : (r.metadata || {}); } catch (_) {}
+      let rawContent = r.content;
+      let contentStr = typeof rawContent === 'string' ? rawContent : JSON.stringify(rawContent || '');
+      let title = r.title || r.content_type;
+      let readablePreview = '';
+      let readableContent = '';
+      try {
+        const parsed = typeof rawContent === 'object' ? rawContent : JSON.parse(contentStr);
+        if (Array.isArray(parsed)) {
+          const first = parsed[0] || {};
+          title = r.title || first.theme || first.platform || first.name || first.subject || r.content_type;
+          readablePreview = (first.hook || first.content || first.response || first.fit || first.subject_line || first.name || '').substring(0, 200);
+          readableContent = parsed.map((p, i) => {
+            let t = '--- ITEM ' + (i+1) + ' ---\n';
+            // Partnership Scout format
+            if (p.name) t += 'Partner: ' + p.name + '\n';
+            if (p.type) t += 'Type: ' + p.type + '\n';
+            if (p.website) t += 'Website: ' + p.website + '\n';
+            if (p.fit) t += 'Fit: ' + p.fit + '\n';
+            if (p.audience) t += 'Audience: ' + p.audience + '\n';
+            if (p.rank) t += 'Priority Rank: ' + p.rank + '\n';
+            // Social post format
+            if (p.platform) t += 'Platform: ' + p.platform + '\n';
+            if (p.hook) t += 'Hook: ' + p.hook + '\n';
+            if (p.content) t += 'Content: ' + p.content + '\n';
+            if (p.cta) t += 'CTA: ' + p.cta + '\n';
+            // Email format
+            if (p.subject_line) t += 'Subject: ' + p.subject_line + '\n';
+            if (p.preview_text) t += 'Preview: ' + p.preview_text + '\n';
+            if (p.body) t += 'Body: ' + p.body + '\n';
+            // General format
+            if (p.title) t += 'Title: ' + p.title + '\n';
+            if (p.description) t += 'Description: ' + p.description + '\n';
+            if (p.response) t += 'Response: ' + p.response + '\n';
+            return t.trim();
+          }).join('\n\n');
+        } else if (parsed && typeof parsed === 'object') {
+          title = r.title || parsed.title || parsed.name || parsed.subject || r.content_type;
+          readablePreview = (parsed.hook || parsed.content || parsed.summary || parsed.description || parsed.fit || '').substring(0, 200);
+          readableContent = Object.entries(parsed).map(([k,v]) => k + ': ' + (typeof v === 'object' ? JSON.stringify(v) : v)).join('\n');
+        }
+      } catch(_) {
+        readablePreview = contentStr.substring(0, 200);
+        readableContent = contentStr;
+      }
       return {
         id:          r.id,
         agentName:   r.agent_name,
         contentType: r.content_type,
-        title:       r.title,
+        title:       title || r.content_type,
         url:         r.url,
         status:      meta.status || 'pending_review',
-        // Truncate content preview for the list view
-        preview:     typeof r.content === 'string' ? r.content.substring(0, 300) : null,
+        preview:     readablePreview,
+        content:     readableContent,
         meta,
         createdAt:   r.created_at,
       };
@@ -429,7 +473,7 @@ io.on('connection', (socket) => {
 
   // Send current state immediately
   try {
-    socket.emit('summary', db.getDashboardSummary());
+    db.getDashboardSummary().then(s => socket.emit('summary', s)).catch(e => console.error(e));
   } catch (err) {
     console.error('Failed to send initial summary:', err.message);
   }
@@ -447,7 +491,7 @@ io.on('connection', (socket) => {
 /** Push fresh data to all connected dashboards */
 function broadcastUpdate() {
   try {
-    io.emit('summary', db.getDashboardSummary());
+    db.getDashboardSummary().then(s => io.emit('summary', s)).catch(e => console.error(e));
     io.emit('alerts',  db.getOpenAlerts());
     io.emit('logs',    db.getRecentLogs(50));
   } catch (err) {

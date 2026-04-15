@@ -85,7 +85,7 @@ Output JSON:
   async execute(context = {}) {
     this._log('info', 'Running brand voice audit');
 
-    const recentContent = db.getGeneratedContent(30);
+    const recentContent = await db.getGeneratedContent(30);
     const auditResults  = [];
     let totalScore      = 0;
     let violationCount  = 0;

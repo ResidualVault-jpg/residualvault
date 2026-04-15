@@ -55,7 +55,7 @@ pool.saveGeneratedContent = async (agentName, contentType, title, content, url, 
 pool.createAlert = async (agentName, severity, message) => {
   try {
     await pool.query(
-      'INSERT INTO system_alerts (agent_name, severity, message, resolved) VALUES ($1, $2, $3, false)',
+      'INSERT INTO system_alerts (agent_name, type, message, resolved) VALUES ($1, $2, $3, false)',
       [agentName, severity, message]
     );
   } catch (err) { console.error('[DB] createAlert error:', err.message); }
@@ -68,15 +68,20 @@ pool.getDashboardSummary = async () => {
     const reports = await pool.query('SELECT * FROM agent_reports ORDER BY created_at DESC LIMIT 10').then(r => r.rows).catch(() => []);
     const content = await pool.query('SELECT * FROM generated_content ORDER BY created_at DESC LIMIT 10').then(r => r.rows).catch(() => []);
     const alerts = await pool.query('SELECT * FROM system_alerts WHERE resolved=false ORDER BY created_at DESC LIMIT 10').then(r => r.rows).catch(() => []);
+    // Calculate success rate from agent_metrics
+    const successCount = metrics.filter(m => { try { const d = typeof m.metrics === 'string' ? JSON.parse(m.metrics) : m.metrics; return d && d.status === 'success'; } catch(_) { return false; } }).length;
+    const totalAgents = metrics.length;
+    const successRate = totalAgents > 0 ? ((successCount / totalAgents) * 100).toFixed(1) : '0.0';
+    const totalRuns = await pool.query('SELECT COUNT(*) FROM agent_logs WHERE status = $1', ['complete']).then(r => parseInt(r.rows[0].count)).catch(() => 0);
     return {
       metrics, recentLogs: logs, reports, content, openAlerts: alerts,
       summary: {
-        totalAgents: metrics.length,
-        totalRuns: logs.length,
-        totalSuccess: logs.filter(l => l.status === 'success').length,
-        totalFailed: logs.filter(l => l.status === 'error').length,
+        totalAgents,
+        totalRuns,
+        totalSuccess: successCount,
+        totalFailed: totalAgents - successCount,
         openAlerts: alerts.length,
-        successRate: logs.length ? ((logs.filter(l => l.status === 'success').length / logs.length) * 100).toFixed(1) : '0.0'
+        successRate
       }
     };
   } catch (err) {
@@ -88,6 +93,106 @@ pool.getAllMetrics = async () => {
   try {
     return (await pool.query('SELECT * FROM agent_metrics ORDER BY updated_at DESC')).rows;
   } catch (e) { return []; }
+};
+
+
+pool.getContentForReview = async (limit = 100) => {
+  try {
+    const result = await pool.query(`
+      SELECT * FROM generated_content 
+      WHERE metadata IS NULL 
+         OR metadata->>'status' IS NULL 
+         OR metadata->>'status' IN ('pending_review', 'ready_for_review')
+      ORDER BY created_at DESC 
+      LIMIT $1
+    `, [limit]);
+    return result.rows;
+  } catch (err) { 
+    console.error('[DB] getContentForReview error:', err.message); 
+    return []; 
+  }
+};
+
+pool.updateContentReview = async (id, status, reason = null) => {
+  try {
+    await pool.query(`
+      UPDATE generated_content 
+      SET metadata = COALESCE(metadata, '{}'::jsonb) || $1::jsonb
+      WHERE id = $2
+    `, [JSON.stringify({ status, reason, reviewedAt: new Date().toISOString() }), id]);
+  } catch (err) { console.error('[DB] updateContentReview error:', err.message); }
+};
+
+
+pool.getOpenAlerts = async (limit = 20) => {
+  try {
+    const result = await pool.query(
+      'SELECT * FROM system_alerts WHERE resolved=false ORDER BY created_at DESC LIMIT $1',
+      [limit]
+    );
+    return result.rows;
+  } catch (err) { console.error('[DB] getOpenAlerts error:', err.message); return []; }
+};
+
+pool.getRecentLogs = async (limit = 50) => {
+  try {
+    const result = await pool.query(
+      'SELECT * FROM agent_logs ORDER BY created_at DESC LIMIT $1',
+      [limit]
+    );
+    return result.rows;
+  } catch (err) { console.error('[DB] getRecentLogs error:', err.message); return []; }
+};
+
+
+pool.getGeneratedContent = async (limit = 50, contentType = null) => {
+  try {
+    let query = 'SELECT * FROM generated_content';
+    let params = [];
+    if (contentType) {
+      query += ' WHERE content_type = $1 ORDER BY created_at DESC LIMIT $2';
+      params = [contentType, limit];
+    } else {
+      query += ' ORDER BY created_at DESC LIMIT $1';
+      params = [limit];
+    }
+    return (await pool.query(query, params)).rows;
+  } catch (err) { console.error('[DB] getGeneratedContent error:', err.message); return []; }
+};
+
+pool.getReports = async (limit = 20, agentName = null) => {
+  try {
+    let query = 'SELECT * FROM agent_reports';
+    let params = [];
+    if (agentName) {
+      query += ' WHERE agent_name = $1 ORDER BY created_at DESC LIMIT $2';
+      params = [agentName, limit];
+    } else {
+      query += ' ORDER BY created_at DESC LIMIT $1';
+      params = [limit];
+    }
+    return (await pool.query(query, params)).rows;
+  } catch (err) { console.error('[DB] getReports error:', err.message); return []; }
+};
+
+pool.getMetrics = async () => {
+  try {
+    return (await pool.query('SELECT * FROM agent_metrics ORDER BY updated_at DESC')).rows;
+  } catch (err) { console.error('[DB] getMetrics error:', err.message); return []; }
+};
+
+pool.getSummaryStats = async () => {
+  try {
+    const logs = await pool.query('SELECT status, COUNT(*) as count FROM agent_logs GROUP BY status');
+    const stats = { totalRuns: 0, successCount: 0, failCount: 0 };
+    for (const row of logs.rows) {
+      stats.totalRuns += parseInt(row.count);
+      if (row.status === 'complete' || row.status === 'success') stats.successCount += parseInt(row.count);
+      if (row.status === 'error' || row.status === 'failed') stats.failCount += parseInt(row.count);
+    }
+    stats.successRate = stats.totalRuns > 0 ? ((stats.successCount / (stats.successCount + stats.failCount || 1)) * 100).toFixed(1) : '0.0';
+    return stats;
+  } catch (err) { console.error('[DB] getSummaryStats error:', err.message); return { totalRuns: 0, successCount: 0, failCount: 0, successRate: '0.0' }; }
 };
 
 module.exports = pool;

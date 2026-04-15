@@ -17,7 +17,7 @@ class AnalyticsOracle extends BaseAgent {
   }
 
   async generateDailyIntelligenceReport() {
-    const summary   = db.getDashboardSummary();
+    const summary   = await db.getDashboardSummary();
     const metrics   = summary.metrics;
     const alerts    = summary.openAlerts;
     const reports   = summary.reports;
@@ -153,7 +153,7 @@ Output JSON:
       systemHealth:    daily.systemHealth?.status,
       systemScore:     daily.systemHealth?.score,
       insights:        (daily.insights || []).length,
-      openAlerts:      db.getOpenAlerts().length,
+      openAlerts:      (await db.getOpenAlerts()).length,
       topPriority:     daily.todaysPriorities?.[0]?.action,
     };
   }
