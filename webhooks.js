@@ -144,4 +144,58 @@ router.post('/report/daily', async (req, res) => {
   }
 });
 
+
+// --- HeyGen Video Webhook ---
+router.post('/heygen', async (req, res) => {
+  try {
+    const { event_type, event_data } = req.body || {};
+    const videoId = event_data?.video_id;
+    console.log('[HeyGen Webhook] Event:', event_type, 'Video:', videoId);
+
+    if (!videoId) return res.json({ received: true });
+
+    if (event_type === 'avatar_video.success' || event_type === 'video.success') {
+      const videoUrl = event_data?.url || event_data?.video_url || null;
+      const result = await pool.query(
+        "SELECT id, metadata FROM generated_content WHERE metadata->>'videoId' = $1",
+        [videoId]
+      );
+      if (result.rows.length > 0) {
+        const row = result.rows[0];
+        let meta = typeof row.metadata === 'string' ? JSON.parse(row.metadata) : (row.metadata || {});
+        meta.status = 'ready_for_review';
+        meta.videoUrl = videoUrl;
+        meta.renderedAt = new Date().toISOString();
+        await pool.query(
+          'UPDATE generated_content SET metadata = $1, url = $2 WHERE id = $3',
+          [JSON.stringify(meta), videoUrl, row.id]
+        );
+        console.log('[HeyGen Webhook] Video', videoId, 'marked ready_for_review');
+      }
+    } else if (event_type === 'avatar_video.fail' || event_type === 'video.fail') {
+      const error = event_data?.error || event_data?.message || 'Unknown error';
+      const result = await pool.query(
+        "SELECT id, metadata FROM generated_content WHERE metadata->>'videoId' = $1",
+        [videoId]
+      );
+      if (result.rows.length > 0) {
+        const row = result.rows[0];
+        let meta = typeof row.metadata === 'string' ? JSON.parse(row.metadata) : (row.metadata || {});
+        meta.status = 'failed';
+        meta.error = error;
+        await pool.query(
+          'UPDATE generated_content SET metadata = $1 WHERE id = $2',
+          [JSON.stringify(meta), row.id]
+        );
+        console.log('[HeyGen Webhook] Video', videoId, 'FAILED:', error);
+      }
+    }
+
+    res.json({ received: true });
+  } catch (err) {
+    console.error('[HeyGen Webhook] Error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 module.exports = router;

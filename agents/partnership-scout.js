@@ -141,8 +141,13 @@ Output JSON:
       }
     }
 
-    const pipelineRaw = await this.buildPartnershipPipeline();
-    const pipeline    = this.parseJSON(pipelineRaw) || {};
+    let pipeline = {};
+    try {
+      const pipelineRaw = await this.buildPartnershipPipeline();
+      pipeline = this.parseJSON(pipelineRaw) || {};
+    } catch (err) {
+      this._log('error', `Partnership pipeline generation failed: ${err.message}`);
+    }
 
     await this.saveReport(
       'partnerships',

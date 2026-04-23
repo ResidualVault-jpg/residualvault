@@ -56,9 +56,9 @@ app.get('/api/summary', async (req, res) => {
 });
 
 /** GET /api/agents — agent statuses */
-app.get('/api/agents', (req, res) => {
+app.get('/api/agents', async (req, res) => {
   try {
-    const metrics = db.getAllMetrics();
+    const metrics = await db.getAllMetrics();
     res.json(metrics);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -66,29 +66,49 @@ app.get('/api/agents', (req, res) => {
 });
 
 /** GET /api/logs?limit=100&agent= */
-app.get('/api/logs', (req, res) => {
+app.get('/api/logs', async (req, res) => {
   try {
     const limit     = parseInt(req.query.limit || '100');
     const agentName = req.query.agent || null;
-    res.json(db.getRecentLogs(limit, agentName));
+    res.json(await db.getRecentLogs(limit, agentName));
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-/** GET /api/alerts */
-app.get('/api/alerts', (req, res) => {
+
+/** GET /api/calendar - scheduled content posts */
+app.get('/api/calendar', async (req, res) => {
   try {
-    res.json(db.getOpenAlerts());
+    const { platform, week } = req.query;
+    let offset = parseInt(week || '0');
+    let startDate = new Date();
+    startDate.setDate(startDate.getDate() - startDate.getDay() + (offset * 7));
+    startDate.setHours(0,0,0,0);
+    let endDate = new Date(startDate);
+    endDate.setDate(endDate.getDate() + 7);
+    let q = 'SELECT * FROM content_posts WHERE scheduled_date >= $1 AND scheduled_date < $2';
+    let params = [startDate.toISOString().split('T')[0], endDate.toISOString().split('T')[0]];
+    if (platform) { q += ' AND platform = '; params.push(platform); }
+    q += ' ORDER BY scheduled_date ASC, scheduled_time ASC';
+    const result = await db.query(q, params);
+    res.json({ posts: result.rows, weekStart: startDate.toISOString().split('T')[0], weekEnd: endDate.toISOString().split('T')[0] });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+/** GET /api/alerts */
+app.get('/api/alerts', async (req, res) => {
+  try {
+    res.json(await db.getOpenAlerts());
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
 /** POST /api/alerts/:id/resolve */
-app.post('/api/alerts/:id/resolve', (req, res) => {
+app.post('/api/alerts/:id/resolve', async (req, res) => {
   try {
-    db.resolveAlert(parseInt(req.params.id));
+    await db.query('UPDATE system_alerts SET resolved = true WHERE id = $1', [parseInt(req.params.id)]);
     res.json({ success: true });
     broadcastUpdate();
   } catch (err) {
@@ -97,22 +117,22 @@ app.post('/api/alerts/:id/resolve', (req, res) => {
 });
 
 /** GET /api/reports?limit=50&agent= */
-app.get('/api/reports', (req, res) => {
+app.get('/api/reports', async (req, res) => {
   try {
     const limit     = parseInt(req.query.limit || '50');
     const agentName = req.query.agent || null;
-    res.json(db.getReports(limit, agentName));
+    res.json(await db.getReports(limit, agentName));
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
 /** GET /api/content?limit=20&type= */
-app.get('/api/content', (req, res) => {
+app.get('/api/content', async (req, res) => {
   try {
     const limit       = parseInt(req.query.limit || '20');
     const contentType = req.query.type || null;
-    res.json(db.getGeneratedContent(limit, contentType));
+    res.json(await db.getGeneratedContent(limit, contentType));
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -235,12 +255,13 @@ app.get('/api/review', async (req, res) => {
  * GET /api/review/:id
  * Full record including complete content.
  */
-app.get('/api/review/:id', (req, res) => {
+app.get('/api/review/:id', async (req, res) => {
   try {
-    const row = db.db.prepare('SELECT * FROM generated_content WHERE id = ?').get(parseInt(req.params.id));
+    const result = await db.query('SELECT * FROM generated_content WHERE id = $1', [parseInt(req.params.id)]);
+    const row = result.rows[0];
     if (!row) return res.status(404).json({ error: 'Not found' });
     let meta = {};
-    try { meta = JSON.parse(row.metadata); } catch (_) {}
+    try { meta = typeof row.metadata === 'string' ? JSON.parse(row.metadata) : (row.metadata || {}); } catch (_) {}
     res.json({ ...row, meta });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -257,12 +278,15 @@ app.get('/api/review/:id', (req, res) => {
 app.post('/api/review/:id/approve', async (req, res) => {
   try {
     const id  = parseInt(req.params.id);
-    const row = db.db.prepare('SELECT * FROM generated_content WHERE id = ?').get(id);
+    const _res = await db.query('SELECT * FROM generated_content WHERE id = $1', [id]);
+    const row = _res.rows[0];
     if (!row) return res.status(404).json({ error: 'Not found' });
 
     let extra = {};
+    const PLATFORM_MAP = { 'twitter/x': 'twitter', 'twitter': 'twitter', 'x': 'twitter', 'linkedin': 'linkedin', 'instagram': 'instagram', 'facebook': 'facebook', 'tiktok': 'tiktok' };
+    const normPlatform = (p) => p ? (PLATFORM_MAP[p.toLowerCase().trim()] || p.toLowerCase().trim()) : null;
 
-    // Video content → trigger YouTube upload
+    // Video content - trigger YouTube upload
     if (['video-office-journey', 'video-conference-room', 'video'].includes(row.content_type)) {
       let scheduler;
       try { scheduler = require('../scheduler'); } catch (_) {}
@@ -271,8 +295,36 @@ app.post('/api/review/:id/approve', async (req, res) => {
         const ytResult = await agent.publishVideo(id);
         extra = { youtubeUrl: ytResult?.youtubeUrl, youtubeId: ytResult?.youtubeId };
       }
-    } else {
-      db.updateContentReview(id, 'approved', { notes: req.body?.notes || '' });
+      await db.updateContentReview(id, 'approved', { notes: req.body?.notes || '' });
+    }
+    // Social posts - unpack and insert into content_posts for publishing
+    else if (row.content_type === 'social-posts') {
+      await db.updateContentReview(id, 'approved', { notes: req.body?.notes || '' });
+      let posts = [];
+      try { const raw = typeof row.content === 'string' ? JSON.parse(row.content) : row.content; posts = Array.isArray(raw) ? raw : []; } catch (_) {}
+      let meta = {};
+      try { meta = typeof row.metadata === 'string' ? JSON.parse(row.metadata) : (row.metadata || {}); } catch (_) {}
+      const defaultPlatform = normPlatform(meta.platform);
+      const scheduledDate = req.body?.scheduledDate || new Date(Date.now() + 86400000).toISOString().split('T')[0];
+      let postsInserted = 0;
+      for (const post of posts) {
+        const platform = normPlatform(post.platform) || defaultPlatform;
+        if (!platform) continue;
+        let content = post.content || '';
+        if (post.cta && !content.includes(post.cta)) content += '\n\n' + post.cta;
+        let hashtags = '';
+        if (Array.isArray(post.hashtags)) hashtags = post.hashtags.map(h => h.startsWith('#') ? h : '#' + h).join(' ');
+        else if (typeof post.hashtags === 'string') hashtags = post.hashtags;
+        try {
+          await db.query('INSERT INTO content_posts (platform, content, hashtags, scheduled_date, scheduled_time, status) VALUES ($1,$2,$3,$4,$5,$6)', [platform, content, hashtags, scheduledDate, '09:00:00', 'approved']);
+          postsInserted++;
+        } catch (e) { console.error('[rv-control] Insert post failed:', e.message); }
+      }
+      extra = { postsInserted, scheduledDate };
+    }
+    // All other content - just mark approved
+    else {
+      await db.updateContentReview(id, 'approved', { notes: req.body?.notes || '' });
     }
 
     broadcastUpdate();
@@ -286,10 +338,10 @@ app.post('/api/review/:id/approve', async (req, res) => {
  * POST /api/review/:id/reject
  * Body: { reason: "string" }
  */
-app.post('/api/review/:id/reject', (req, res) => {
+app.post('/api/review/:id/reject', async (req, res) => {
   try {
     const id = parseInt(req.params.id);
-    db.updateContentReview(id, 'rejected', { reason: req.body?.reason || '' });
+    await db.updateContentReview(id, 'rejected', { reason: req.body?.reason || '' });
     broadcastUpdate();
     res.json({ success: true, id, status: 'rejected' });
   } catch (err) {
@@ -303,10 +355,11 @@ app.post('/api/review/:id/reject', (req, res) => {
  * Body: { title, content, notes, youtubeDescription, youtubeTags, ... }
  * Resets status to 'pending_review' so it reappears in the queue.
  */
-app.put('/api/review/:id', (req, res) => {
+app.put('/api/review/:id', async (req, res) => {
   try {
     const id  = parseInt(req.params.id);
-    const row = db.db.prepare('SELECT * FROM generated_content WHERE id = ?').get(id);
+    const _r = await db.query('SELECT * FROM generated_content WHERE id = $1', [id]);
+    const row = _r.rows[0];
     if (!row) return res.status(404).json({ error: 'Not found' });
 
     const { title, content, ...metaPatch } = req.body || {};
@@ -324,7 +377,7 @@ app.put('/api/review/:id', (req, res) => {
     params.push(JSON.stringify(meta));
 
     params.push(id);
-    db.db.prepare(`UPDATE generated_content SET ${updates.join(', ')} WHERE id = ?`).run(...params);
+    await db.query(`UPDATE generated_content SET ${updates.join(', ')} WHERE id = $${params.length}`, params);
 
     broadcastUpdate();
     res.json({ success: true, id, status: 'pending_review' });
@@ -340,28 +393,30 @@ app.put('/api/review/:id', (req, res) => {
  * Returns video records with optional status filter.
  * Statuses: processing | ready_for_review | approved | live | rejected | failed
  */
-app.get('/api/videos', (req, res) => {
+app.get('/api/videos', async (req, res) => {
   try {
     const { status, limit = '50' } = req.query;
     let rows;
+    let result;
     if (status) {
-      rows = db.db.prepare(`
+      result = await db.query(`
         SELECT id, title, url, metadata, created_at
         FROM   generated_content
         WHERE  content_type IN ('video-office-journey','video-conference-room','video')
-          AND  metadata LIKE ?
+          AND  metadata->>'status' = $1
         ORDER  BY created_at DESC
-        LIMIT  ?
-      `).all(`%"status":"${status}"%`, parseInt(limit));
+        LIMIT  $2
+      `, [status, parseInt(limit)]);
     } else {
-      rows = db.db.prepare(`
+      result = await db.query(`
         SELECT id, title, url, metadata, created_at
         FROM   generated_content
         WHERE  content_type IN ('video-office-journey','video-conference-room','video')
         ORDER  BY created_at DESC
-        LIMIT  ?
-      `).all(parseInt(limit));
+        LIMIT  $1
+      `, [parseInt(limit)]);
     }
+    rows = result.rows;
     // Parse metadata for cleaner response
     const videos = rows.map(r => {
       let meta = {};

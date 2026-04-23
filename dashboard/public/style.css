@@ -824,3 +824,74 @@ body {
   display: block;
 }
 .review-edit-textarea:focus { border-color: var(--gold-dim); }
+
+/* ── Content Calendar ────────────────────────────────────── */
+.panel--calendar { grid-column: 1 / -1; }
+.calendar-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 8px;
+  padding: 16px;
+}
+.cal-day {
+  background: #141720;
+  border-radius: 8px;
+  padding: 10px;
+  min-height: 120px;
+  border: 1px solid #252a3a;
+}
+.cal-day--today { border-color: #63b3ed; }
+.cal-day-header {
+  font-size: 11px;
+  color: #8892a4;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  margin-bottom: 4px;
+}
+.cal-day-date {
+  font-size: 18px;
+  font-weight: 700;
+  color: #e2e8f0;
+  margin-bottom: 8px;
+}
+.cal-day--today .cal-day-date { color: #63b3ed; }
+.cal-post {
+  background: #1a2340;
+  border-radius: 6px;
+  padding: 6px 8px;
+  margin-bottom: 4px;
+  font-size: 11px;
+  color: #e2e8f0;
+  border-left: 3px solid #63b3ed;
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cal-post:hover { background: #1e2a4a; }
+.cal-post[data-platform=twitter] { border-left-color: #1da1f2; }
+.cal-post[data-platform=linkedin] { border-left-color: #0077b5; }
+.cal-post[data-platform=instagram] { border-left-color: #e1306c; }
+.cal-post[data-platform=tiktok] { border-left-color: #ff0050; }
+.cal-post .cal-platform {
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: #8892a4;
+  margin-bottom: 2px;
+}
+.cal-post .cal-status {
+  display: inline-block;
+  font-size: 9px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  margin-top: 2px;
+}
+.cal-status--approved { background: #48bb7833; color: #48bb78; }
+.cal-status--published { background: #63b3ed33; color: #63b3ed; }
+.cal-status--pending { background: #f6ad5533; color: #f6ad55; }
+.cal-empty {
+  color: #4a5568;
+  font-size: 11px;
+  font-style: italic;
+}

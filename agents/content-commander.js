@@ -12,7 +12,7 @@ class ContentCommander extends BaseAgent {
       model:     'claude-opus-4-6',
       schedule:  '30 7 * * 0',   // Daily at 8 AM
       timezone:  'America/Denver',
-      maxTokens: 8096,
+      maxTokens: 16000,
     });
   }
 
@@ -84,7 +84,7 @@ Output JSON array:
     this._log('info', 'Running daily content production');
 
     // Generate content briefs
-    const briefsRaw  = await this.createContentBriefs(5);
+    const briefsRaw  = await this.createContentBriefs(3);
     const briefsParsed = this.parseJSON(briefsRaw);
     const briefs       = Array.isArray(briefsParsed) ? briefsParsed : [];
 

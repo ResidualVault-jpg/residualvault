@@ -60,6 +60,26 @@
     </div>
   </section>
 
+
+  <section class="panel panel--calendar" id="calendar-panel">
+    <div class="panel-header">
+      <h2>Content Calendar <span class="badge badge--blue" id="calendar-count">0</span></h2>
+      <div class="panel-actions">
+        <button class="btn btn--sm" id="cal-prev">Prev</button>
+        <span id="cal-week-label" style="font-size:14px;color:#e2e8f0;margin:0 8px;">This Week</span>
+        <button class="btn btn--sm" id="cal-next">Next</button>
+        <select id="cal-platform-filter" class="filter-select">
+          <option value="">All Platforms</option>
+          <option value="twitter">Twitter/X</option>
+          <option value="linkedin">LinkedIn</option>
+          <option value="instagram">Instagram</option>
+          <option value="tiktok">TikTok</option>
+        </select>
+      </div>
+    </div>
+    <div class="calendar-grid" id="calendar-grid"></div>
+  </section>
+
   <div class="main-grid">
     <!-- Agent Grid -->
     <section class="panel panel--agents">

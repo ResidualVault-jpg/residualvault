@@ -21,7 +21,7 @@ const logger = winston.createLogger({
 const AGENT_MANIFESTS = [
   { key: 'cybersecurity',         file: './agents/cybersecurity-agent' },
   { key: 'graphics-image',        file: './agents/graphics-image-agent' },
-  { key: 'heygen-video',          file: './agents/heygen-video-agent' },
+  { key: 'veo-video',          file: './agents/veo-video-agent-v2' },
   { key: 'legal-compliance',      file: './agents/legal-compliance-agent' },
   { key: 'brand-voice',           file: './agents/brand-voice-auditor' },
   { key: 'marketing-master',      file: './agents/marketing-master-agent' },
@@ -42,7 +42,15 @@ const AGENT_MANIFESTS = [
   { key: 'industry-researcher',   file: './agents/industry-researcher' },
   { key: 'master-strategist',     file: './agents/master-strategist' },
   { key: 'social-media',          file: './agents/social-media-agent' },
+        { key: 'user-testing',       file: './agents/user-testing-agent' },
+  { key: 'fixer',              file: './agents/fixer-agent' },
+  { key: 'infra-security',     file: './agents/infra-security-scanner' },
+  { key: 'threat-intel',        file: './agents/threat-intelligence-agent' },
+  { key: 'twitter-content',    file: './agents/twitter-content-creator' },
+  { key: 'linkedin-content',   file: './agents/linkedin-content-creator' },
   { key: 'customer-success',      file: './agents/customer-success-agent' },
+  { key: "meta-token",          file: "./agents/meta-token-agent" },
+  { key: "instagram-carousel",  file: "./agents/instagram-carousel-agent" },
 ];
 
 // Loaded agent instances
@@ -115,6 +123,21 @@ function getAgent(key) {
 async function start() {
   loadAgents();
   registerCronJobs();
+  // Social Media Publisher - runs daily at 9 AM Denver
+  const { publishApprovedPosts } = require('./socialPublisher');
+  cron.schedule('0 9 * * *', async () => {
+    logger.info('Daily social publishing triggered...');
+    try { await publishApprovedPosts(); } catch (err) { logger.error('Publisher error: ' + err.message); }
+  }, { timezone: 'America/Denver' });
+  logger.info('Social publisher scheduled daily at 9 AM Denver');
+  // YouTube Publisher - runs daily at 10 AM Denver
+  const { publishApprovedVideos } = require('./youtubePublisher');
+  cron.schedule('0 10 * * *', async () => {
+    logger.info('Daily YouTube publishing triggered...');
+    try { await publishApprovedVideos(); } catch (err) { logger.error('YouTube publisher error: ' + err.message); }
+  }, { timezone: 'America/Denver' });
+  logger.info('YouTube publisher scheduled daily at 10 AM Denver');
+
   logger.info(`Scheduler running — ${Object.keys(cronJobs).length} cron jobs active`);
 }
 

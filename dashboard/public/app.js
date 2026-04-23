@@ -210,6 +210,7 @@ function applyLogFilters() {
   const agentFilter = document.getElementById('log-filter').value;
   const typeFilter  = document.getElementById('log-type-filter').value;
 
+  if (typeof state.logs !== 'object') state.logs = [];
   const filtered = state.logs.filter(l => {
     if (agentFilter && l.agent_name !== agentFilter) return false;
     if (typeFilter  && l.type       !== typeFilter)   return false;
@@ -226,7 +227,7 @@ function applyLogFilters() {
     <div class="log-entry">
       <span class="log-ts">${formatTime(l.timestamp)}</span>
       <span class="log-agent">${esc(l.agent_name)}</span>
-      <span class="log-type type--${l.type}">${l.type.toUpperCase()}</span>
+      <span class="log-type type--${l.type || 'info'}">${(l.type || 'info').toUpperCase()}</span>
       <span class="log-msg" title="${esc(l.message)}">${esc(l.message)}</span>
     </div>
   `).join('');
@@ -673,3 +674,62 @@ document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeRevie
 // Load immediately + poll every 30 s
 loadReviewQueue();
 setInterval(loadReviewQueue, 30000);
+
+var calendarWeekOffset = 0;
+var calendarPlatform = '';
+var DAYS = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+
+async function loadCalendar() {
+  try {
+    var url = '/rv-control/api/calendar' + String.fromCharCode(63) + 'week=' + calendarWeekOffset;
+    if (calendarPlatform) url += String.fromCharCode(38) + 'platform=' + calendarPlatform;
+    var res = await fetch(url);
+    var data = await res.json();
+    renderCalendar(data);
+  } catch (err) { console.error('Calendar error:', err); }
+}
+
+function renderCalendar(data) {
+  var grid = document.getElementById('calendar-grid');
+  var label = document.getElementById('cal-week-label');
+  var badge = document.getElementById('calendar-count');
+  if (!grid) return;
+  var start = new Date(data.weekStart + 'T00:00:00');
+  var today = new Date().toISOString().split('T')[0];
+  label.textContent = fmtD(start) + ' - ' + fmtD(new Date(start.getTime() + 6*86400000));
+  badge.textContent = data.posts.length;
+  var byDay = {};
+  for (var d = 0; d < 7; d++) {
+    var dt = new Date(start.getTime() + d * 86400000);
+    byDay[dt.toISOString().split('T')[0]] = { date: dt, posts: [] };
+  }
+  data.posts.forEach(function(p) { var sd = (p.scheduled_date || '').split('T')[0]; if (byDay[sd]) byDay[sd].posts.push(p); });
+  var h = '';
+  Object.keys(byDay).sort().forEach(function(key) {
+    var day = byDay[key];
+    var td = key === today;
+    h += '<div class="cal-day' + (td ? ' cal-day--today' : '') + '">';
+    h += '<div class="cal-day-header">' + DAYS[day.date.getDay()] + '</div>';
+    h += '<div class="cal-day-date">' + day.date.getDate() + '</div>';
+    if (day.posts.length === 0) { h += '<div class="cal-empty">No posts</div>'; }
+    else { day.posts.forEach(function(p) {
+      var pr = (p.content || '').substring(0, 60).replace(/[<>"]/g, '');
+      var sc = p.status === 'published' ? 'cal-status--published' : p.status === 'approved' ? 'cal-status--approved' : 'cal-status--pending';
+      h += '<div class="cal-post" data-platform="' + p.platform + '">';
+      h += '<div class="cal-platform">' + p.platform + '</div>';
+      h += '<div>' + pr + '</div>';
+      h += '<span class="cal-status ' + sc + '">' + p.status + '</span></div>';
+    }); }
+    h += '</div>';
+  });
+  grid.innerHTML = h;
+}
+
+function fmtD(d) { return ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][d.getMonth()] + ' ' + d.getDate(); }
+
+document.getElementById('cal-prev').addEventListener('click', function() { calendarWeekOffset--; loadCalendar(); });
+document.getElementById('cal-next').addEventListener('click', function() { calendarWeekOffset++; loadCalendar(); });
+document.getElementById('cal-platform-filter').addEventListener('change', function(e) { calendarPlatform = e.target.value; loadCalendar(); });
+
+loadCalendar();
+setInterval(loadCalendar, 60000);

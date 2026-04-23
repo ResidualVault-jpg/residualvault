@@ -33,9 +33,30 @@ pool.saveReport = pool.saveAgentReport;
 
 pool.updateAgentMetrics = async (agentName, metrics) => {
   try {
+    // Read existing metrics first
+    const existing = await pool.query(
+      'SELECT metrics FROM agent_metrics WHERE agent_name = $1',
+      [agentName]
+    ).then(r => {
+      if (r.rows.length === 0) return {};
+      const raw = r.rows[0].metrics;
+      return (typeof raw === 'string') ? JSON.parse(raw) : (raw || {});
+    }).catch(() => ({}));
+
+    // Merge: increment counters, update status/lastRun/duration
+    const merged = {
+      ...existing,
+      status:       metrics.status       || existing.status,
+      lastRun:      metrics.lastRun      || existing.lastRun,
+      duration:     metrics.duration     ?? existing.duration,
+      runs_total:   (existing.runs_total || 0) + 1,
+      runs_success: (existing.runs_success || 0) + (metrics.successCount || 0),
+      runs_failed:  (existing.runs_failed  || 0) + (metrics.failCount    || 0),
+    };
+
     await pool.query(
       'INSERT INTO agent_metrics (agent_name, metrics, updated_at) VALUES ($1, $2, NOW()) ON CONFLICT (agent_name) DO UPDATE SET metrics = $2, updated_at = NOW()',
-      [agentName, JSON.stringify(metrics)]
+      [agentName, JSON.stringify(merged)]
     );
   } catch (err) { console.error('[DB] updateAgentMetrics error:', err.message); }
 };
@@ -45,7 +66,7 @@ pool.saveGeneratedContent = async (agentName, contentType, title, content, url, 
     await pool.query(
       'INSERT INTO generated_content (agent_name, content_type, title, content, url, metadata) VALUES ($1, $2, $3, $4, $5, $6)',
       [agentName, contentType, title,
-       typeof content === 'string' ? content : JSON.stringify(content),
+       JSON.stringify(content),
        url || null,
        metadata ? JSON.stringify(metadata) : null]
     );
@@ -68,18 +89,26 @@ pool.getDashboardSummary = async () => {
     const reports = await pool.query('SELECT * FROM agent_reports ORDER BY created_at DESC LIMIT 10').then(r => r.rows).catch(() => []);
     const content = await pool.query('SELECT * FROM generated_content ORDER BY created_at DESC LIMIT 10').then(r => r.rows).catch(() => []);
     const alerts = await pool.query('SELECT * FROM system_alerts WHERE resolved=false ORDER BY created_at DESC LIMIT 10').then(r => r.rows).catch(() => []);
-    // Calculate success rate from agent_metrics
-    const successCount = metrics.filter(m => { try { const d = typeof m.metrics === 'string' ? JSON.parse(m.metrics) : m.metrics; return d && d.status === 'success'; } catch(_) { return false; } }).length;
-    const totalAgents = metrics.length;
-    const successRate = totalAgents > 0 ? ((successCount / totalAgents) * 100).toFixed(1) : '0.0';
-    const totalRuns = await pool.query('SELECT COUNT(*) FROM agent_logs WHERE status = $1', ['complete']).then(r => parseInt(r.rows[0].count)).catch(() => 0);
+    // Calculate success rate from actual run data in agent_logs
+    const runStats = await pool.query(`
+      SELECT
+        COUNT(*) FILTER (WHERE status = 'complete') AS completions,
+        COUNT(*) FILTER (WHERE status = 'error')    AS errors
+      FROM agent_logs
+    `).then(r => r.rows[0]).catch(() => ({ completions: 0, errors: 0 }));
+    const totalCompleted = parseInt(runStats.completions) || 0;
+    const totalErrors    = parseInt(runStats.errors) || 0;
+    const totalRuns      = totalCompleted + totalErrors;
+    const totalAgents    = metrics.length;
+    const successCount   = totalCompleted;
+    const successRate    = totalRuns > 0 ? ((totalCompleted / totalRuns) * 100).toFixed(1) : '0.0';
     return {
       metrics, recentLogs: logs, reports, content, openAlerts: alerts,
       summary: {
         totalAgents,
         totalRuns,
         totalSuccess: successCount,
-        totalFailed: totalAgents - successCount,
+        totalFailed: totalErrors,
         openAlerts: alerts.length,
         successRate
       }
@@ -99,24 +128,24 @@ pool.getAllMetrics = async () => {
 pool.getContentForReview = async (limit = 100) => {
   try {
     const result = await pool.query(`
-      SELECT * FROM generated_content 
-      WHERE metadata IS NULL 
-         OR metadata->>'status' IS NULL 
+      SELECT * FROM generated_content
+      WHERE metadata IS NULL
+         OR metadata->>'status' IS NULL
          OR metadata->>'status' IN ('pending_review', 'ready_for_review')
-      ORDER BY created_at DESC 
+      ORDER BY created_at DESC
       LIMIT $1
     `, [limit]);
     return result.rows;
-  } catch (err) { 
-    console.error('[DB] getContentForReview error:', err.message); 
-    return []; 
+  } catch (err) {
+    console.error('[DB] getContentForReview error:', err.message);
+    return [];
   }
 };
 
 pool.updateContentReview = async (id, status, reason = null) => {
   try {
     await pool.query(`
-      UPDATE generated_content 
+      UPDATE generated_content
       SET metadata = COALESCE(metadata, '{}'::jsonb) || $1::jsonb
       WHERE id = $2
     `, [JSON.stringify({ status, reason, reviewedAt: new Date().toISOString() }), id]);

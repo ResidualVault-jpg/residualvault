@@ -8,7 +8,7 @@ class SocialMediaAgent extends BaseAgent {
     super({
       name:      'Social Media Agent',
       role:      'You are the Social Media Director for ResidualVault. You create platform-native content, build and execute posting schedules, engage authentically with the audience, analyse performance, and grow ResidualVault\'s social following into a powerful distribution channel and lead source.',
-      model:     'claude-opus-4-6',
+      model:     'claude-sonnet-4-6',
       schedule:  '0 8 * * 0', // Every 2 hours
       timezone:  'America/Denver',
       maxTokens: 6144,
@@ -115,7 +115,82 @@ Output JSON array:
 `);
   }
 
+
+  /**
+   * Review work submitted by sub-agents (Twitter Content Creator, LinkedIn Content Creator).
+   * Checks generated_content for items with metadata.department_head = 'Social Media Agent'
+   * and metadata.status = 'awaiting_dept_review'.
+   * Reviews each item, approves or requests revision.
+   */
+  async reviewSubAgentWork() {
+    const db = require('../db');
+    const result = await db.query(
+      "SELECT id, agent_name, content_type, title, content, metadata FROM generated_content WHERE metadata->>'department_head' = $1 AND metadata->>'status' = $2 ORDER BY created_at ASC",
+      [this.name, 'awaiting_dept_review']
+    );
+    const pending = result.rows;
+    if (pending.length === 0) {
+      this._log('info', 'No sub-agent work to review');
+      return { reviewed: 0 };
+    }
+
+    this._log('info', 'Reviewing ' + pending.length + ' items from sub-agents');
+    let approved = 0, revised = 0;
+
+    for (const item of pending) {
+      let contentStr = typeof item.content === 'string' ? item.content : JSON.stringify(item.content);
+      let meta = typeof item.metadata === 'string' ? JSON.parse(item.metadata) : (item.metadata || {});
+
+      try {
+        const reviewResult = await this.ask(
+          'You are the Social Media Director reviewing content from your team.\n' +
+          'Sub-agent: ' + item.agent_name + '\n' +
+          'Content type: ' + item.content_type + '\n' +
+          'Title: ' + item.title + '\n' +
+          'Content:\n' + contentStr.substring(0, 3000) + '\n\n' +
+          'Review this content for:\n' +
+          '1. Brand voice consistency (confident, empowering, educational)\n' +
+          '2. Platform appropriateness\n' +
+          '3. Quality and engagement potential\n' +
+          '4. Factual accuracy\n' +
+          '5. Clear CTA\n\n' +
+          'Output JSON:\n' +
+          '{"approved": true/false, "score": 1-10, "feedback": "string", "edits": "string or null"}'
+        );
+        const review = this.parseJSON(reviewResult) || { approved: true, score: 7 };
+
+        if (review.approved !== false && (review.score || 7) >= 5) {
+          meta.status = 'pending_review';
+          meta.dept_review = { approved: true, score: review.score, feedback: review.feedback, reviewedAt: new Date().toISOString() };
+          await db.query('UPDATE generated_content SET metadata = $1 WHERE id = $2', [JSON.stringify(meta), item.id]);
+          this._log('info', 'Approved: ' + item.title + ' (score: ' + (review.score || '?') + ')');
+          approved++;
+        } else {
+          meta.status = 'revision_needed';
+          meta.dept_review = { approved: false, score: review.score, feedback: review.feedback, edits: review.edits, reviewedAt: new Date().toISOString() };
+          await db.query('UPDATE generated_content SET metadata = $1 WHERE id = $2', [JSON.stringify(meta), item.id]);
+          this._log('info', 'Revision needed: ' + item.title + ' - ' + (review.feedback || 'No feedback'));
+          revised++;
+        }
+      } catch (err) {
+        this._log('error', 'Review failed for ' + item.title + ': ' + err.message);
+        // On error, approve anyway to not block the pipeline
+        meta.status = 'pending_review';
+        meta.dept_review = { approved: true, autoApproved: true, error: err.message };
+        await db.query('UPDATE generated_content SET metadata = $1 WHERE id = $2', [JSON.stringify(meta), item.id]);
+        approved++;
+      }
+    }
+
+    return { reviewed: pending.length, approved, revised };
+  }
+
   async execute(context = {}) {
+    // Step 1: Review sub-agent work first
+    const reviewResult = await this.reviewSubAgentWork();
+    this._log('info', 'Sub-agent review: ' + reviewResult.approved + ' approved, ' + reviewResult.revised + ' need revision');
+
+    // Step 2: Run own content generation
     this._log('info', 'Running social media content generation cycle');
 
     const platforms = [

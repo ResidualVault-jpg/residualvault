@@ -16,7 +16,66 @@ class CybersecurityAgent extends BaseAgent {
     });
   }
 
+
+  async reviewSubAgentWork() {
+    const result = await db.query(
+      "SELECT id, agent_name, content_type, title, content, metadata FROM generated_content WHERE metadata->>'department_head' = $1 AND metadata->>'status' = $2 ORDER BY created_at ASC",
+      [this.name, 'awaiting_dept_review']
+    );
+    const pending = result.rows;
+    if (pending.length === 0) {
+      this._log('info', 'No sub-agent security reports to review');
+      return { reviewed: 0, approved: 0, revised: 0 };
+    }
+    this._log('info', 'Reviewing ' + pending.length + ' security reports from sub-agents');
+    let approved = 0, revised = 0;
+    for (const item of pending) {
+      let contentStr = typeof item.content === 'string' ? item.content : JSON.stringify(item.content);
+      let meta = typeof item.metadata === 'string' ? JSON.parse(item.metadata) : (item.metadata || {});
+      try {
+        const reviewResult = await this.ask(
+          'You are the Chief Security Officer reviewing a security report from your team.\n' +
+          'Sub-agent: ' + item.agent_name + '\n' +
+          'Report title: ' + item.title + '\n' +
+          'Content:\n' + contentStr.substring(0, 3000) + '\n\n' +
+          'Review for:\n' +
+          '1. Accuracy of threat assessments\n' +
+          '2. Completeness of coverage\n' +
+          '3. Actionability of recommendations\n' +
+          '4. Priority accuracy (are critical items truly critical?)\n' +
+          '5. Any missed angles or blind spots\n\n' +
+          'Output JSON:\n' +
+          '{"approved": true/false, "score": 1-10, "feedback": "string", "additionalFindings": "string or null"}'
+        );
+        const review = this.parseJSON(reviewResult) || { approved: true, score: 7 };
+        if (review.approved !== false && (review.score || 7) >= 5) {
+          meta.status = 'pending_review';
+          meta.dept_review = { approved: true, score: review.score, feedback: review.feedback, reviewedAt: new Date().toISOString() };
+          await db.query('UPDATE generated_content SET metadata = $1 WHERE id = $2', [JSON.stringify(meta), item.id]);
+          approved++;
+        } else {
+          meta.status = 'revision_needed';
+          meta.dept_review = { approved: false, score: review.score, feedback: review.feedback, reviewedAt: new Date().toISOString() };
+          await db.query('UPDATE generated_content SET metadata = $1 WHERE id = $2', [JSON.stringify(meta), item.id]);
+          revised++;
+        }
+      } catch (err) {
+        this._log('error', 'Review failed for ' + item.title + ': ' + err.message);
+        meta.status = 'pending_review';
+        meta.dept_review = { approved: true, autoApproved: true, error: err.message };
+        await db.query('UPDATE generated_content SET metadata = $1 WHERE id = $2', [JSON.stringify(meta), item.id]);
+        approved++;
+      }
+    }
+    return { reviewed: pending.length, approved, revised };
+  }
+
   async execute(context = {}) {
+    // Step 1: Review sub-agent security reports
+    const reviewResult = await this.reviewSubAgentWork();
+    this._log('info', 'Sub-agent review: ' + reviewResult.approved + ' approved, ' + reviewResult.revised + ' need revision');
+
+    // Step 2: Run own security audit
     this._log('info', 'Running security audit cycle');
 
     // Gather internal metrics from DB

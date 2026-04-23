@@ -110,6 +110,7 @@ class BaseAgent {
 
   /**
    * Call the Claude API with a conversation.
+   * Includes a timeout to prevent hanging calls from blocking the agent.
    * @param {Array}  messages       - Anthropic messages array
    * @param {string} [systemOverride] - Override default system prompt
    * @returns {string} - Assistant text response
@@ -121,13 +122,20 @@ class BaseAgent {
       `Always be specific, data-driven, and actionable. Output valid JSON when requested.`
     );
 
-    const response = await this.client.messages.create({
+    const timeoutMs = (this.maxTokens > 4096) ? 300000 : 180000; // 5 min for large, 3 min for normal
+
+    const apiPromise = this.client.messages.create({
       model:      this.model,
       max_tokens: this.maxTokens,
       system,
       messages,
     });
 
+    const timeoutPromise = new Promise((_, reject) =>
+      setTimeout(() => reject(new Error(`Claude API call timed out after ${timeoutMs / 1000}s`)), timeoutMs)
+    );
+
+    const response = await Promise.race([apiPromise, timeoutPromise]);
     return response.content[0].text;
   }
 
@@ -156,7 +164,8 @@ class BaseAgent {
       if (raw) return JSON.parse(raw[1].trim());
       // 3. Full string as JSON
       return JSON.parse(text.trim());
-    } catch {
+    } catch (err) {
+      if (this.logger) this.logger.warn('parseJSON failed: ' + err.message + ' (response length: ' + (text ? text.length : 0) + ')');
       return null;
     }
   }

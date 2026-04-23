@@ -12,7 +12,7 @@ class SeoArchitect extends BaseAgent {
       model:     'claude-opus-4-6',
       schedule:  '0 7 * * 0',   // Tuesdays at 6 AM
       timezone:  'America/Denver',
-      maxTokens: 6144,
+      maxTokens: 16000,
     });
   }
 
@@ -22,7 +22,7 @@ Conduct comprehensive keyword research for ResidualVault in the "${niche}" niche
 
 PLATFORM CONTEXT: ResidualVault — passive income building through digital marketing
 
-Research and categorise 40+ keywords covering:
+Research and categorise exactly 20 keywords covering:
 1. High-intent commercial keywords (ready to buy)
 2. Informational keywords (education, awareness)
 3. Comparison keywords (vs competitors)
@@ -135,7 +135,7 @@ Output JSON:
     }
 
     // Audit recent blog posts
-    const recentPosts = await db.getGeneratedContent(10).filter(c => c.content_type === 'blog-post');
+    const recentPosts = (await db.getGeneratedContent(10)).filter(c => c.content_type === 'blog-post');
     let auditResults  = [];
 
     for (const post of recentPosts.slice(0, 3)) {

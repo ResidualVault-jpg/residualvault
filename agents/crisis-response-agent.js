@@ -9,21 +9,31 @@ class CrisisResponseAgent extends BaseAgent {
     super({
       name:      'Crisis Response Agent',
       role:      'You are the Crisis Management Director for ResidualVault. You proactively monitor for threats to brand reputation, prepare crisis response playbooks, and lead rapid response when issues arise. You protect the brand with speed, clarity, and empathy.',
-      model:     'claude-opus-4-6',
-      schedule:  '*/15 * * * *', // Every 15 minutes
+      model:     'claude-sonnet-4-6',
+      schedule:  '*/15 * * * *',
       maxTokens: 4096,
     });
-
-    this.crisisThreshold = 3; // Number of high-severity alerts before escalating
+    this.crisisThreshold = 3;
   }
 
   async monitorThreatSignals() {
     const recentAlerts = await db.getOpenAlerts();
     const allLogs = await db.getRecentLogs(50);
     const recentErrors = allLogs.filter(l => l.type === 'error' || l.status === 'error');
-
     const criticalAlerts = recentAlerts.filter(a => a.severity === 'critical');
     const highAlerts     = recentAlerts.filter(a => a.severity === 'high');
+
+    if (recentAlerts.length === 0 && recentErrors.length === 0) {
+      return JSON.stringify({
+        threatLevel: 'green',
+        activeCrises: [],
+        potentialThreats: [],
+        recommendedActions: [],
+        escalationRequired: false,
+        monitoringFocus: [],
+        skippedApiCall: true
+      });
+    }
 
     return this.ask(`
 You are the Crisis Response Director conducting a threat assessment for ResidualVault.
@@ -50,7 +60,7 @@ Output JSON:
     { "type": "string", "probability": "low|medium|high", "description": "string", "preventiveAction": "string" }
   ],
   "recommendedActions": ["string"],
-  "escalationRequired": boolean,
+  "escalationRequired": false,
   "monitoringFocus": ["string"]
 }
 `);
@@ -73,7 +83,7 @@ Output JSON:
 {
   "crisisType": "${crisisType}",
   "severity": "string",
-  "immediateChecklist": [{ "step": number, "action": "string", "owner": "string", "timeframe": "string" }],
+  "immediateChecklist": [{ "step": 1, "action": "string", "owner": "string", "timeframe": "string" }],
   "internalComms": { "subject": "string", "body": "string" },
   "publicStatement": { "social": "string", "website": "string" },
   "customerEmail": { "subject": "string", "body": "string" },
@@ -87,22 +97,17 @@ Output JSON:
   async execute(context = {}) {
     const assessmentRaw = await this.monitorThreatSignals();
     const assessment    = this.parseJSON(assessmentRaw) || {};
-
     const threatLevel   = assessment.threatLevel || 'green';
     const activeCrises  = assessment.activeCrises || [];
+    const skipped = assessment.skippedApiCall ? ' (no alerts — API call skipped)' : '';
+    this._log('info', `Threat level: ${threatLevel}, Active crises: ${activeCrises.length}${skipped}`);
 
-    // Always log assessment
-    this._log('info', `Threat level: ${threatLevel}, Active crises: ${activeCrises.length}`);
-
-    // Escalate if red or multiple critical alerts
     if (threatLevel === 'red' || threatLevel === 'orange') {
       await this.reportIssue(
         threatLevel === 'red' ? 'critical' : 'high',
-        `Crisis Alert — ${threatLevel.toUpperCase()} Threat Level`,
-        assessment.recommendedActions?.join(' | ') || 'Immediate review required'
+        `Crisis Alert —  ${threatLevel.toUpperCase()} Threat Level`,
+        (assessment.recommendedActions || []).join(' | ') || 'Immediate review required'
       );
-
-      // Generate playbooks for active crises
       for (const crisis of activeCrises.filter(c => c.severity === 'critical').slice(0, 2)) {
         const playbookRaw = await this.generateCrisisPlaybook(crisis.type);
         const playbook    = this.parseJSON(playbookRaw) || {};
@@ -116,7 +121,6 @@ Output JSON:
       }
     }
 
-    // Save assessment (only write report if not green to reduce noise)
     if (threatLevel !== 'green') {
       await this.saveReport(
         'crisis-assessment',

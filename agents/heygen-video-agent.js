@@ -15,11 +15,11 @@ const VOICE_ID     = '828b59f834fd4c7188da322b6d9b6c75'; // David Castlemore
 // HeyGen built-in background IDs (corporate / professional library)
 // These are discovered at runtime via /v2/backgrounds; kept as fallbacks.
 const BG_FALLBACKS = {
-  lobby:        { type: 'color', value: '#0d1b2a' }, // deep navy — office feel
-  hallway:      { type: 'color', value: '#1a2332' },
-  privateOffice:{ type: 'color', value: '#1c1c2e' },
-  desk:         { type: 'color', value: '#111827' },
-  conferenceRoom:{ type: 'color', value: '#0f172a' },
+  lobby:         { type: 'color', value: '#00b140' },
+  hallway:       { type: 'color', value: '#00b140' },
+  privateOffice: { type: 'color', value: '#00b140' },
+  desk:          { type: 'color', value: '#00b140' },
+  conferenceRoom:{ type: 'color', value: '#00b140' },
 };
 
 // ResidualVault brand data always shown on the conference-room whiteboard (verbally)
@@ -52,7 +52,7 @@ class HeyGenVideoAgent extends BaseAgent {
                  'passive income intelligence platform. You write compelling, authoritative scripts for ' +
                  'Bryan Castlemore — a confident Wall Street-style advisor — who presents ResidualVault\'s ' +
                  'weekly insights directly to camera. Every script must feel fresh, data-driven, and urgent.',
-      model:     'claude-opus-4-6',
+      model:     'claude-sonnet-4-6',
       schedule:  '0 15 * * 0',  // Every Sunday at 3 PM Denver time
       timezone:  'America/Denver',
       maxTokens: 8096,
