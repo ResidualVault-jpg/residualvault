@@ -116,6 +116,7 @@ router.get('/staking/options', async (req, res) => {
     `);
     const sorted = result.rows.sort((a, b) => parseFloat(b.apy) - parseFloat(a.apy)).map(r => ({
       ...r,
+      symbol: r.token || r.network || '',
       stakeUrl: r.stake_url,
       riskLevel: r.risk_level,
       lockPeriod: r.lock_period,
