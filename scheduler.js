@@ -123,6 +123,7 @@ function getAgent(key) {
 async function start() {
   loadAgents();
   registerCronJobs();
+
   // Social Media Publisher - runs daily at 9 AM Denver
   const { publishApprovedPosts } = require('./socialPublisher');
   cron.schedule('0 9 * * *', async () => {
@@ -130,6 +131,7 @@ async function start() {
     try { await publishApprovedPosts(); } catch (err) { logger.error('Publisher error: ' + err.message); }
   }, { timezone: 'America/Denver' });
   logger.info('Social publisher scheduled daily at 9 AM Denver');
+
   // YouTube Publisher - runs daily at 10 AM Denver
   const { publishApprovedVideos } = require('./youtubePublisher');
   cron.schedule('0 10 * * *', async () => {
@@ -137,6 +139,14 @@ async function start() {
     try { await publishApprovedVideos(); } catch (err) { logger.error('YouTube publisher error: ' + err.message); }
   }, { timezone: 'America/Denver' });
   logger.info('YouTube publisher scheduled daily at 10 AM Denver');
+
+  // Email Publisher - runs every Monday at 8 AM Denver (sends approved Sunday newsletters)
+  const { publishApprovedNewsletters } = require('./emailPublisher');
+  cron.schedule('0 8 * * 1', async () => {
+    logger.info('Weekly email publishing triggered...');
+    try { await publishApprovedNewsletters(); } catch (err) { logger.error('Email publisher error: ' + err.message); }
+  }, { timezone: 'America/Denver' });
+  logger.info('Email publisher scheduled Mondays at 8 AM Denver');
 
   logger.info(`Scheduler running — ${Object.keys(cronJobs).length} cron jobs active`);
 }

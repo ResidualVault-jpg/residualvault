@@ -1,29 +1,18 @@
 'use strict';
 
 require('dotenv').config({ path: require('path').join(__dirname, '../.env') });
-const BaseAgent   = require('./base-agent');
-const nodemailer  = require('nodemailer');
+const BaseAgent = require('./base-agent');
 
 class EmailConductor extends BaseAgent {
   constructor() {
     super({
       name:      'Email Conductor',
-      role:      'You are the Email Marketing Director for ResidualVault. You design and execute high-converting email campaigns, build sophisticated automation sequences, optimise deliverability, segment lists for maximum relevance, and turn email into the #1 revenue-generating channel.',
+      role:      'You are the Email Marketing Director for ResidualVault, a cryptocurrency staking comparison and intelligence platform. You design high-converting email campaigns, build automation sequences, segment subscriber lists, and turn email into a key growth channel for crypto staking intelligence.',
       model:     'claude-sonnet-4-6',
-      schedule:  '30 8 * * 0',   // Thursdays at 7 AM (newsletter day)
+      schedule:  '0 8 * * 0',
       timezone:  'America/Denver',
       maxTokens: 8096,
     });
-
-    // Only initialise transporter if SMTP is configured
-    if (process.env.SMTP_HOST && process.env.SMTP_USER) {
-      this.transporter = nodemailer.createTransporter({
-        host:   process.env.SMTP_HOST,
-        port:   parseInt(process.env.SMTP_PORT || '587'),
-        secure: process.env.SMTP_SECURE === 'true',
-        auth:   { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
-      });
-    }
   }
 
   async writeWeeklyNewsletter() {
@@ -32,35 +21,43 @@ class EmailConductor extends BaseAgent {
 Write this week's ResidualVault newsletter.
 
 DATE: ${today}
-BRAND: ResidualVault — building passive income through digital marketing
-AUDIENCE: Active subscribers who want to grow their income online
+BRAND: ResidualVault — cryptocurrency staking comparison and intelligence platform. Tracks 156+ staking protocols with live APY data, risk analysis, and yield comparisons.
+AUDIENCE: Crypto stakers and DeFi investors who want to find the best staking yields and manage risk.
+WEBSITE: ResidualVault.com
+TONE: Expert but approachable. Data-driven. No hype. Think Bloomberg meets crypto-native.
 
 Newsletter requirements:
-- Subject line + preview text (tested against spam filters)
-- Warm opening (personal, not corporate)
-- Main feature: one in-depth strategy or insight (300-400 words)
-- Quick wins section: 3 bite-sized tips
-- Community spotlight: fictional member success story
-- Tool/resource of the week
-- Motivational closing
-- PS with a CTA
+- Subject line and preview text (no spam words, under 50 chars for subject)
+- Warm opening that acknowledges something happening in crypto/staking this week
+- Main feature: one in-depth staking strategy, protocol spotlight, or market insight (300-400 words)
+- Quick wins section: 3 actionable staking tips
+- Protocol spotlight: highlight a real protocol with strong APY (use real data like Persistence around 32 percent, Stargaze around 25 percent, Evmos around 22 percent, etc.)
+- Market context: brief note on staking market trends
+- Closing with CTA to explore protocols on ResidualVault.com
+
+IMPORTANT: Use only real protocols and realistic APY figures. Never fabricate data.
 
 Output JSON:
 {
-  "subject":      "string (50 chars max)",
-  "previewText":  "string (90 chars max)",
-  "greeting":     "string",
+  "subject": "string under 50 chars",
+  "previewText": "string under 90 chars",
+  "greeting": "string",
   "mainFeature": {
     "headline": "string",
-    "body":     "string",
-    "cta":      "string",
-    "ctaUrl":   "[LINK]"
+    "body": "string",
+    "cta": "string",
+    "ctaUrl": "https://residualvault.com"
   },
-  "quickWins": [{ "tip": "string", "emoji": "string" }],
-  "communitySpotlight": { "member": "string", "story": "string", "quote": "string" },
-  "toolOfWeek":  { "name": "string", "description": "string", "link": "[LINK]" },
-  "closing":     "string",
-  "ps":          "string",
+  "quickWins": [{ "tip": "string" }],
+  "protocolSpotlight": {
+    "name": "string",
+    "apy": "string",
+    "chain": "string",
+    "riskLevel": "string",
+    "description": "string"
+  },
+  "marketContext": "string",
+  "closing": "string",
   "estimatedReadTime": "string"
 }
 `);
@@ -70,14 +67,15 @@ Output JSON:
     return this.ask(`
 Build a ${emailCount}-email automation sequence for ResidualVault.
 
+BRAND: ResidualVault — crypto staking comparison platform tracking 156+ protocols.
 GOAL: ${goal}
 TARGET SEGMENT: ${targetSegment}
 
 For each email write:
 1. Send timing (Day X after trigger)
-2. Subject line + preview text
-3. Full email body
-4. Primary CTA
+2. Subject line and preview text
+3. Full email body (focused on staking value prop)
+4. Primary CTA pointing to ResidualVault.com
 5. If-then branching rules (what happens based on open/click/no-action)
 
 Output JSON:
@@ -88,56 +86,27 @@ Output JSON:
   "trigger": "string",
   "emails": [
     {
-      "emailNumber": number,
-      "sendDay":     number,
-      "subject":     "string",
-      "preview":     "string",
-      "body":        "string",
-      "cta":         "string",
-      "ctaUrl":      "[LINK]",
-      "ifOpened":    "string",
-      "ifClicked":   "string",
-      "ifNoAction":  "string",
-      "goalForEmail": "string"
+      "emailNumber": 1,
+      "sendDay": 0,
+      "subject": "string",
+      "preview": "string",
+      "body": "string",
+      "cta": "string",
+      "ctaUrl": "https://residualvault.com",
+      "ifOpened": "string",
+      "ifClicked": "string",
+      "ifNoAction": "string"
     }
-  ],
-  "successMetrics": [{ "metric": "string", "benchmark": "string" }]
+  ]
 }
-`);
-  }
-
-  async generateSubjectLineTests(topic, count = 10) {
-    return this.ask(`
-Generate ${count} subject line variations for a ResidualVault email about: "${topic}"
-
-For each subject line include:
-- The line itself
-- Psychological trigger used
-- Character count
-- Spam word flag (true/false)
-- Predicted open rate tier (low/medium/high)
-
-Output JSON array:
-[
-  {
-    "subjectLine": "string",
-    "previewText": "string",
-    "trigger":     "string",
-    "chars":       number,
-    "spamFlag":    boolean,
-    "predictedTier": "low|medium|high",
-    "abtestGroup":   "A|B|C|D|E"
-  }
-]
 `);
   }
 
   async execute(context = {}) {
     this._log('info', 'Running email conductor cycle');
 
-    // Weekly newsletter
     const newsletterRaw = await this.writeWeeklyNewsletter();
-    const newsletter    = this.parseJSON(newsletterRaw) || {};
+    const newsletter = this.parseJSON(newsletterRaw) || {};
 
     await this.saveContent(
       'email-newsletter',
@@ -147,11 +116,10 @@ Output JSON array:
       { estimatedReadTime: newsletter.estimatedReadTime }
     );
 
-    // Build 3 automation sequences
     const sequences = [
-      { goal: 'Onboard new free trial users and convert to paid', segment: 'New Trials',    count: 7  },
-      { goal: 'Re-engage inactive subscribers',                   segment: 'Cold (60+ days)', count: 5 },
-      { goal: 'Upsell monthly subscribers to annual plan',        segment: 'Monthly Subs',  count: 4  },
+      { goal: 'Onboard new users — introduce staking comparison features and get first protocol saved', segment: 'New Signups', count: 5 },
+      { goal: 'Re-engage inactive subscribers with top APY opportunities they are missing', segment: 'Inactive 30+ days', count: 4 },
+      { goal: 'Convert free users to Starter/Pro plan with advanced staking analytics', segment: 'Free Tier Users', count: 4 },
     ];
 
     const seqResults = [];
@@ -159,7 +127,13 @@ Output JSON array:
       try {
         const raw    = await this.buildAutomationSequence(seq.goal, seq.segment, seq.count);
         const result = this.parseJSON(raw) || {};
-        await this.saveContent('email-sequence', result.sequenceName || seq.goal, JSON.stringify(result, null, 2), null, { emailCount: seq.count });
+        await this.saveContent(
+          'email-sequence',
+          result.sequenceName || seq.goal,
+          JSON.stringify(result, null, 2),
+          null,
+          { emailCount: seq.count, segment: seq.segment }
+        );
         seqResults.push({ name: result.sequenceName, emails: seq.count, status: 'created' });
       } catch (err) {
         this._log('error', `Sequence failed: ${err.message}`);
@@ -167,23 +141,15 @@ Output JSON array:
       }
     }
 
-    // Subject line tests for next campaign
-    const subjectLinesRaw = await this.generateSubjectLineTests('How to earn your first $1,000 in passive income', 10);
-    const _slParsed   = this.parseJSON(subjectLinesRaw);
-    const subjectLines = Array.isArray(_slParsed) ? _slParsed : [];
-
-    await this.saveContent('subject-line-tests', 'Subject Line Test Suite', JSON.stringify(subjectLines, null, 2), null, { count: subjectLines.length });
-
     await this.saveReport(
       'email-marketing',
       `Email Report — Newsletter ready, ${seqResults.filter(s => s.status === 'created').length} sequences built`,
-      JSON.stringify({ newsletter: newsletter.subject, sequences: seqResults, subjectLineTests: subjectLines.length }, null, 2)
+      JSON.stringify({ newsletter: newsletter.subject, sequences: seqResults }, null, 2)
     );
 
     return {
       newsletterSubject: newsletter.subject,
-      sequencesBuilt:    seqResults.filter(s => s.status === 'created').length,
-      subjectLineTests:  subjectLines.length,
+      sequencesBuilt: seqResults.filter(s => s.status === 'created').length,
     };
   }
 }

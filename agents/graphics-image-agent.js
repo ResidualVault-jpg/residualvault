@@ -2,145 +2,186 @@
 
 require('dotenv').config({ path: require('path').join(__dirname, '../.env') });
 const BaseAgent = require('./base-agent');
-const OpenAI    = require('openai');
 const path      = require('path');
 const fs        = require('fs');
+
+const GRAPHICS_DIR = path.join(__dirname, '../public/graphics');
+
+const GRAPHIC_CATEGORIES = {
+  'stat-cards':          { path: 'stat-cards',          description: 'Big stat numbers — protocol count, top APY, user metrics' },
+  'apy-alerts':          { path: 'apy-alerts',          description: 'High APY alerts — protocol name, APY rate, chain, risk level' },
+  'protocol-spotlights': { path: 'protocol-spotlights', description: 'Protocol deep dives — APY, chain, risk, lock period, description' },
+  'quote-cards':         { path: 'quote-cards',         description: 'Branded quotes and value propositions' },
+  'tip-cards':           { path: 'tip-cards',           description: 'Numbered staking tips with headline and body text' },
+};
+
+const PLATFORM_SIZE_MAP = {
+  twitter:   'twitter',
+  linkedin:  'twitter',
+  blog:      'twitter',
+  og:        'twitter',
+  instagram: 'square',
+  facebook:  'square',
+  square:    'square',
+};
 
 class GraphicsImageAgent extends BaseAgent {
   constructor() {
     super({
       name:      'Graphics/Image Agent',
-      role:      'You are a creative director and visual strategist specializing in digital marketing visuals. You craft precise image generation prompts and manage visual content for ResidualVault\'s marketing channels.',
+      role:      'You are the visual content strategist for ResidualVault, a cryptocurrency staking comparison and intelligence platform. You select and assign branded graphics to content posts, matching the right graphic type to each piece of content.',
       model:     'claude-sonnet-4-6',
-      schedule:  '45 10 * * 0',  // Sunday content batch (America/Denver)
+      schedule:  '45 10 * * 0',
       timezone:  'America/Denver',
       maxTokens: 2048,
     });
-
-    // Route OpenAI calls through proxy if configured
-    const proxyUrl = process.env.HTTPS_PROXY || process.env.HTTP_PROXY || process.env.GLOBAL_AGENT_HTTP_PROXY || '';
-    const openAiOpts = { apiKey: process.env.OPENAI_API_KEY };
-    if (proxyUrl) {
-      try {
-        const { HttpsProxyAgent } = require('https-proxy-agent');
-        openAiOpts.httpAgent = new HttpsProxyAgent(proxyUrl);
-      } catch (_) {}
-    }
-    this.openai = new OpenAI(openAiOpts);
-    this.imageModel = 'dall-e-3'; // gpt-image-1 requires special access; dall-e-3 is standard
-
-    // Output directory for generated images
-    this.outputDir = path.join(__dirname, '../data/generated-images');
-    if (!fs.existsSync(this.outputDir)) fs.mkdirSync(this.outputDir, { recursive: true });
   }
 
-  /**
-   * Generate an image using OpenAI gpt-image-1.
-   * @param {string} prompt
-   * @param {object} options
-   * @returns {{ url: string, b64: string|null }}
-   */
-  async generateImage(prompt, options = {}) {
-    const response = await this.openai.images.generate({
-      model:   this.imageModel,
-      prompt,
-      n:       1,
-      size:    options.size    || '1024x1024',
-      quality: options.quality || 'standard',
-      ...(options.responseFormat ? { response_format: options.responseFormat } : {}),
-    });
+  getAvailableGraphics() {
+    const available = {};
+    for (const [category, info] of Object.entries(GRAPHIC_CATEGORIES)) {
+      const catDir = path.join(GRAPHICS_DIR, info.path);
+      if (fs.existsSync(catDir)) {
+        const files = fs.readdirSync(catDir).filter(f => f.endsWith('.png'));
+        available[category] = {
+          description: info.description,
+          files: files.map(f => ({
+            filename: f,
+            path: `/graphics/${info.path}/${f}`,
+            size: f.includes('square') ? 'square' : 'twitter',
+          })),
+        };
+      }
+    }
+    return available;
+  }
 
-    const item = response.data[0];
+  selectGraphic(category, platform) {
+    const sizeKey = PLATFORM_SIZE_MAP[platform] || 'twitter';
+    const catDir = path.join(GRAPHICS_DIR, GRAPHIC_CATEGORIES[category]?.path || category);
+
+    if (!fs.existsSync(catDir)) return null;
+
+    const files = fs.readdirSync(catDir).filter(f => f.endsWith('.png'));
+    const match = files.find(f => f.includes(sizeKey));
+    if (!match) return null;
+
     return {
-      url:         item.url         || null,
-      b64:         item.b64_json    || null,
-      revisedPrompt: item.revised_prompt || prompt,
+      localPath: path.join(catDir, match),
+      publicUrl: `https://residualvault.com/graphics/${GRAPHIC_CATEGORIES[category].path}/${match}`,
+      filename: match,
+      category,
+      size: sizeKey,
     };
   }
 
-  /** Ask Claude to craft optimised image prompts for each content need */
-  async craftPrompts(contentNeeds) {
+  async matchContentToGraphics(pendingContent) {
+    const categories = Object.entries(GRAPHIC_CATEGORIES)
+      .map(([k, v]) => `- ${k}: ${v.description}`)
+      .join('\n');
+
     const raw = await this.ask(`
-You are crafting image generation prompts for the ResidualVault brand.
+You are assigning branded graphics to social media and blog content for ResidualVault — a crypto staking comparison platform.
 
-Brand identity:
-- Modern, professional, wealth-building focus
-- Colors: deep navy, gold accents, clean white
-- Tone: aspirational yet attainable, trustworthy
-- Audience: entrepreneurs and passive income seekers
+Available graphic categories:
+${categories}
 
-Content needs: ${JSON.stringify(contentNeeds)}
+Content items to assign graphics to:
+${JSON.stringify(pendingContent, null, 2)}
 
-For EACH content need, produce one optimised prompt for gpt-image-1.
+For each content item, pick the BEST matching graphic category based on the content topic.
+Rules:
+- APY or yield-related content -> apy-alerts
+- Protocol reviews or comparisons -> protocol-spotlights
+- Statistics, numbers, milestones -> stat-cards
+- Motivational, educational, value prop -> quote-cards
+- How-to tips, strategies, advice -> tip-cards
+
 Output JSON array:
 [
   {
-    "need": "string",
-    "prompt": "string (detailed, style-specific, brand-aligned)",
-    "size": "1024x1024|1792x1024|1024x1792",
-    "filename": "snake_case_filename_no_extension"
+    "contentId": number,
+    "category": "stat-cards|apy-alerts|protocol-spotlights|quote-cards|tip-cards",
+    "reason": "brief reason for the match"
   }
 ]
 `);
-    const parsed = this.parseJSON(raw);
-    return Array.isArray(parsed) ? parsed : [];
+
+    return this.parseJSON(raw) || [];
   }
 
   async execute(context = {}) {
-    if (!process.env.OPENAI_API_KEY) {
-      this._log('warning', 'OPENAI_API_KEY not set — skipping image generation');
-      return { skipped: true, reason: 'missing_api_key' };
+    this._log('info', 'Running graphics assignment cycle');
+
+    const available = this.getAvailableGraphics();
+    const totalGraphics = Object.values(available).reduce((sum, cat) => sum + cat.files.length, 0);
+    this._log('info', `${totalGraphics} branded graphics available across ${Object.keys(available).length} categories`);
+
+    const db = require('../db');
+    let pendingContent = [];
+    try {
+      const result = await db.query(`
+        SELECT id, agent_name, content_type, title,
+               LEFT(content::text, 200) as content_preview,
+               metadata
+        FROM generated_content
+        WHERE metadata->>'status' = 'pending_review'
+          AND (metadata->>'graphic_assigned' IS NULL OR metadata->>'graphic_assigned' = 'false')
+          AND content_type IN ('social-post', 'twitter-post', 'linkedin-post', 'blog-post', 'email-newsletter')
+        ORDER BY created_at DESC
+        LIMIT 20
+      `);
+      pendingContent = result.rows;
+    } catch (err) {
+      this._log('error', `Failed to fetch pending content: ${err.message}`);
     }
 
-    // Default daily content needs
-    const contentNeeds = context.contentNeeds || [
-      'Hero banner for homepage promoting passive income',
-      'Social media post graphic — weekly motivational quote',
-      'Email newsletter header — financial freedom theme',
-      'Blog post featured image — digital marketing strategies',
-    ];
+    if (pendingContent.length === 0) {
+      this._log('info', 'No pending content needs graphics');
+      await this.saveReport('graphics-assignment', 'No content to assign graphics to', JSON.stringify({ available }));
+      return { assigned: 0, available: totalGraphics };
+    }
 
-    this._log('info', `Generating ${contentNeeds.length} images`);
+    this._log('info', `Found ${pendingContent.length} content items needing graphics`);
+    const assignments = await this.matchContentToGraphics(pendingContent);
 
-    const prompts  = await this.craftPrompts(contentNeeds);
-    const results  = [];
+    let assignedCount = 0;
+    for (const assignment of assignments) {
+      const platform = pendingContent.find(c => c.id === assignment.contentId);
+      if (!platform) continue;
 
-    for (const item of prompts) {
-      try {
-        this._log('info', `Generating: ${item.need}`);
-        const img = await this.generateImage(item.prompt, { size: item.size });
+      const platformKey = platform.content_type.replace('-post', '').replace('social', 'twitter');
+      const graphic = this.selectGraphic(assignment.category, platformKey);
 
-        // Save b64 to disk if available
-        let savedPath = null;
-        if (img.b64) {
-          savedPath = path.join(this.outputDir, `${item.filename}_${Date.now()}.png`);
-          fs.writeFileSync(savedPath, Buffer.from(img.b64, 'base64'));
+      if (graphic) {
+        try {
+          await db.query(
+            `UPDATE generated_content
+             SET metadata = metadata || $2::jsonb
+             WHERE id = $1`,
+            [assignment.contentId, JSON.stringify({
+              graphic_assigned: true,
+              graphic_category: assignment.category,
+              graphic_url: graphic.publicUrl,
+              graphic_file: graphic.filename,
+              graphic_reason: assignment.reason,
+            })]
+          );
+          assignedCount++;
+          this._log('info', `Assigned ${assignment.category} graphic to content #${assignment.contentId}`);
+        } catch (err) {
+          this._log('error', `Failed to assign graphic to #${assignment.contentId}: ${err.message}`);
         }
-
-        await this.saveContent(
-          'image',
-          item.need,
-          img.revisedPrompt,
-          img.url || savedPath,
-          { originalPrompt: item.prompt, size: item.size, savedPath }
-        );
-
-        results.push({ need: item.need, url: img.url, savedPath, success: true });
-      } catch (err) {
-        this._log('error', `Image generation failed for "${item.need}": ${err.message}`);
-        results.push({ need: item.need, success: false, error: err.message });
       }
     }
 
-    const successCount = results.filter(r => r.success).length;
     await this.saveReport(
-      'image-generation',
-      `Daily Image Generation — ${successCount}/${results.length} succeeded`,
-      JSON.stringify(results, null, 2),
-      successCount < results.length ? 'high' : 'normal'
+      'graphics-assignment',
+      `Graphics Assignment — ${assignedCount}/${pendingContent.length} content items got graphics`,
+      JSON.stringify({ assignments, available: Object.keys(available) }, null, 2)
     );
 
-    return { generated: successCount, total: results.length, results };
+    return { assigned: assignedCount, total: pendingContent.length, available: totalGraphics };
   }
 }
 
