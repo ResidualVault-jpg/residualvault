@@ -17,29 +17,27 @@ class LinkedInContentCreator extends BaseSubAgent {
   }
 
   async execute(context = {}) {
-    this._log('info', 'Creating LinkedIn content batch');
+    this._log('info', 'Creating weekly LinkedIn post');
     const themes = ['Professional growth through passive income', 'Crypto staking as a legitimate investment strategy', 'ResidualVault platform insights and data'];
-    const results = [];
-    for (const theme of themes) {
-      try {
-        const raw = await this.ask('Create 2 high-performing LinkedIn posts for ResidualVault.' +
-          '\nTHEME: ' + theme +
-          '\nBRAND VOICE: Professional, authoritative, data-driven yet approachable' +
-          '\nAUDIENCE: Finance professionals, crypto investors, entrepreneurs' +
-          '\nRules: First 150 chars critical, 1300 char sweet spot, max 5 hashtags, include discussion question' +
-          '\nOutput JSON array: [{"platform":"LinkedIn","type":"single-post","theme":"' + theme + '","content":"string","hashtags":["string"],"hook":"string","cta":"string","bestPostTime":"string"}]');
-        const posts = this.parseJSON(raw);
-        const arr = Array.isArray(posts) ? posts : [];
-        await this.saveContent('social-posts', 'LinkedIn Posts - ' + theme, JSON.stringify(arr, null, 2), null, { platform: 'LinkedIn', count: arr.length, theme });
-        results.push({ theme, posts: arr.length });
-      } catch (err) {
-        this._log('error', 'LinkedIn content failed for ' + theme + ': ' + err.message);
-        results.push({ theme, status: 'failed' });
-      }
+    const theme = themes[Math.floor(Date.now() / 604800000) % themes.length];
+    try {
+      const raw = await this.ask('Create 1 high-performing LinkedIn post for ResidualVault.' +
+        '\nTHEME: ' + theme +
+        '\nBRAND VOICE: Professional, authoritative, data-driven yet approachable' +
+        '\nAUDIENCE: Finance professionals, crypto investors, entrepreneurs' +
+        '\nCADENCE: This is our ONE LinkedIn post for the entire week — make it count' +
+        '\nRules: First 150 chars critical, 1300 char sweet spot, max 5 hashtags, include discussion question' +
+        '\nOutput JSON array: [{"platform":"LinkedIn","type":"single-post","theme":"' + theme + '","content":"string","hashtags":["string"],"hook":"string","cta":"string","bestPostTime":"Sunday 9 AM MT"}]');
+      const posts = this.parseJSON(raw);
+      const arr = Array.isArray(posts) ? posts : [];
+      await this.saveContent('social-posts', 'LinkedIn Weekly Post - ' + theme, JSON.stringify(arr, null, 2), null, { platform: 'LinkedIn', count: 1, theme, cadence: 'weekly' });
+      await this.saveReport('linkedin-content', 'LinkedIn weekly - 1 post', JSON.stringify({ theme, posts: arr.length }, null, 2));
+      return { theme, totalPosts: arr.length };
+    } catch (err) {
+      this._log('error', 'LinkedIn weekly post failed: ' + err.message);
+      await this.saveReport('linkedin-content', 'LinkedIn weekly - failed', JSON.stringify({ theme, status: 'failed', error: err.message }, null, 2));
+      return { theme, totalPosts: 0 };
     }
-    const total = results.reduce((s, r) => s + (r.posts || 0), 0);
-    await this.saveReport('linkedin-content', 'LinkedIn batch - ' + total + ' posts', JSON.stringify(results, null, 2));
-    return { themes: results.length, totalPosts: total };
   }
 }
 

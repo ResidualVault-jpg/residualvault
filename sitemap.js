@@ -19,6 +19,12 @@ async function generateSitemap() {
     { url: '/contact', priority: '0.5', changefreq: 'monthly' },
   ];
 
+  const coinPages = [
+    'ethereum', 'solana', 'cosmos', 'polkadot', 'cardano',
+    'avalanche', 'polygon', 'bnb', 'near', 'fantom',
+    'tezos', 'algorand', 'bitcoin',
+  ];
+
   const blogPosts = [
     { slug: 'best-crypto-staking-rewards-2026', date: '2026-03-15' },
     { slug: 'atom-staking-guide', date: '2026-03-03' },
@@ -41,6 +47,17 @@ async function generateSitemap() {
     <lastmod>${today}</lastmod>
     <changefreq>${page.changefreq}</changefreq>
     <priority>${page.priority}</priority>
+  </url>`;
+  }
+
+  // Coin-specific staking pages
+  for (const coin of coinPages) {
+    xml += `
+  <url>
+    <loc>${base}/staking/${coin}</loc>
+    <lastmod>${today}</lastmod>
+    <changefreq>daily</changefreq>
+    <priority>0.8</priority>
   </url>`;
   }
 

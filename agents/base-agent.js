@@ -210,6 +210,172 @@ class BaseAgent {
     }
   }
 
+  /**
+   * Implement approved recommendations from a report.
+   * Called when the owner clicks "Implement" on an alert in rv-control.
+   * Sends the report back to Claude with instructions to execute, then
+   * takes action through existing agent methods.
+   */
+  async implement(report, alertId) {
+    this._log('info', `Implementing approved recommendations (alert ${alertId})`);
+    const t0 = Date.now();
+
+    const reportStr = typeof report === 'string' ? report : JSON.stringify(report, null, 2);
+
+    // Parse nested report data if present
+    let reportData = report;
+    if (report && report.data && typeof report.data === 'string') {
+      try { reportData = JSON.parse(report.data); } catch (_) { reportData = report; }
+    }
+
+    const systemPrompt =
+      `You are the ${this.name} for ResidualVault. ${this.role} ` +
+      `The platform owner has reviewed and APPROVED your recommendations below. ` +
+      `You must now execute them. Produce a JSON implementation plan.`;
+
+    const userPrompt =
+      `APPROVED REPORT — IMPLEMENT NOW:\n${reportStr.substring(0, 12000)}\n\n` +
+      `Generate a JSON implementation plan. IMPORTANT: Keep total response under 7000 tokens.\n` +
+      `For each recommendation:\n` +
+      `1. Determine the action type: "schedule_post", "update_content", "create_content", "configuration", or "advisory"\n` +
+      `2. For schedule_post: include full post text (max 1500 chars per post)\n` +
+      `3. For create_content: include a summary/outline, not the full body\n` +
+      `4. Focus on the TOP 5 most impactful actions if there are many\n\n` +
+      `Response format:\n` +
+      `{\n` +
+      `  "actions": [\n` +
+      `    {\n` +
+      `      "type": "schedule_post",\n` +
+      `      "platform": "linkedin|twitter|instagram|youtube|email",\n` +
+      `      "content": "full post text",\n` +
+      `      "hashtags": ["tag1"],\n` +
+      `      "scheduled_date": "YYYY-MM-DD",\n` +
+      `      "reason": "why this action"\n` +
+      `    },\n` +
+      `    {\n` +
+      `      "type": "create_content",\n` +
+      `      "content_type": "blog-post|email-newsletter|social-posts|ad-campaign",\n` +
+      `      "title": "content title",\n` +
+      `      "body": "full content body",\n` +
+      `      "reason": "why this action"\n` +
+      `    },\n` +
+      `    {\n` +
+      `      "type": "advisory",\n` +
+      `      "recommendation": "what to do",\n` +
+      `      "reason": "why this cannot be auto-executed"\n` +
+      `    }\n` +
+      `  ],\n` +
+      `  "summary": "1-2 sentence summary of all actions taken"\n` +
+      `}`;
+
+    // Use higher token limit for implementation plans
+    const savedMaxTokens = this.maxTokens;
+    this.maxTokens = 8000;
+    let response;
+    try {
+      response = await this.chat([{ role: 'user', content: userPrompt }], systemPrompt);
+    } finally {
+      this.maxTokens = savedMaxTokens;
+    }
+    const plan = this.parseJSON(response);
+
+    if (!plan || !plan.actions || !Array.isArray(plan.actions)) {
+      this._log('error', 'Failed to parse implementation plan');
+      await this.saveReport('implementation', 'Implementation Failed — ' + this.name, JSON.stringify({
+        error: 'Could not parse implementation plan from Claude response',
+        rawResponse: response.substring(0, 3000),
+        alertId
+      }, null, 2));
+      return { success: false, error: 'parse_failed' };
+    }
+
+    const results = { scheduled: 0, created: 0, advisory: 0, failed: 0, details: [] };
+
+    for (const action of plan.actions) {
+      try {
+        if (action.type === 'schedule_post' && action.platform && action.content) {
+          const schedDate = action.scheduled_date || new Date(Date.now() + 86400000).toISOString().split('T')[0];
+          await db.query(
+            `INSERT INTO content_posts (platform, content, status, scheduled_date, hashtags)
+             VALUES ($1, $2, 'approved', $3, $4)`,
+            [action.platform.toLowerCase(), action.content, schedDate, JSON.stringify(action.hashtags || [])]
+          );
+          results.scheduled++;
+          results.details.push({ type: 'scheduled', platform: action.platform, date: schedDate, reason: action.reason });
+
+        } else if (action.type === 'create_content' && action.body) {
+          await this.saveContent(
+            action.content_type || 'general',
+            action.title || 'Implemented: ' + (action.reason || '').substring(0, 60),
+            typeof action.body === 'string' ? action.body : JSON.stringify(action.body),
+            null,
+            { status: 'pending_review', implemented_from_alert: alertId, agent: this.name }
+          );
+          results.created++;
+          results.details.push({ type: 'created', contentType: action.content_type, title: action.title, reason: action.reason });
+
+        } else if (action.type === 'advisory') {
+          results.advisory++;
+          results.details.push({ type: 'advisory', recommendation: action.recommendation, reason: action.reason });
+
+        } else {
+          results.details.push({ type: action.type || 'unknown', action, note: 'Logged for manual review' });
+        }
+      } catch (err) {
+        results.failed++;
+        results.details.push({ type: 'error', action: action.type, error: err.message });
+        this._log('error', 'Implementation action failed: ' + err.message);
+      }
+    }
+
+    // Resolve the alert
+    await db.query(
+      `UPDATE system_alerts SET resolved = true,
+       details = COALESCE(details, '{}'::jsonb) || jsonb_build_object(
+         'resolved_by'::text, 'owner-approved-implementation'::text,
+         'resolved_at'::text, $1::text,
+         'implementation_results'::text, $2::text
+       ) WHERE id = $3`,
+      [new Date().toISOString(), JSON.stringify(results), alertId]
+    );
+
+    // Save implementation report
+    await this.saveReport('implementation', 'Implemented: ' + (plan.summary || this.name + ' recommendations'), JSON.stringify({
+      alertId,
+      summary: plan.summary,
+      scheduled: results.scheduled,
+      created: results.created,
+      advisory: results.advisory,
+      failed: results.failed,
+      details: results.details,
+      timestamp: new Date().toISOString()
+    }, null, 2));
+
+    // Log as visible content in rv-control
+    const implSummary = `Scheduled: ${results.scheduled} posts, Created: ${results.created} content items` +
+      (results.advisory > 0 ? `, Advisory: ${results.advisory} (need manual action)` : '') +
+      (results.failed > 0 ? `, Failed: ${results.failed}` : '');
+
+    await this.saveContent(
+      'implementation_report',
+      'IMPLEMENTED: ' + this.name + ' recommendations',
+      '## Implementation Report\n\n' +
+      '**Agent:** ' + this.name + '\n' +
+      '**Alert:** #' + alertId + '\n' +
+      '**Summary:** ' + (plan.summary || 'N/A') + '\n\n' +
+      '### Results\n' + implSummary + '\n\n' +
+      '### Actions Taken\n' +
+      results.details.map((d, i) => '**' + (i + 1) + '.** [' + d.type.toUpperCase() + '] ' + (d.reason || d.recommendation || d.error || JSON.stringify(d))).join('\n') + '\n',
+      null,
+      { status: 'implemented', alertId, agent: this.name }
+    );
+
+    const duration = Date.now() - t0;
+    this._log('info', `Implementation complete in ${duration}ms: ${implSummary}`);
+
+    return { success: true, ...results, summary: plan.summary };
+  }
+
   /** Returns current agent status object */
   getStatus() {
     return {

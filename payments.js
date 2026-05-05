@@ -23,8 +23,8 @@ router.post('/create-checkout', async (req, res) => {
       mode: 'subscription',
       customer_email: email,
       line_items: [{ price: PLANS[plan], quantity: 1 }],
-      success_url: 'http://residualvault.com/success?session_id={CHECKOUT_SESSION_ID}',
-      cancel_url: 'http://residualvault.com/pricing',
+      success_url: 'https://residualvault.com/success?session_id={CHECKOUT_SESSION_ID}',
+      cancel_url: 'https://residualvault.com/pricing',
     });
     res.json({ url: session.url, session_id: session.id });
   } catch (err) {

@@ -170,22 +170,32 @@ function renderAlerts(alerts = []) {
     return;
   }
 
-  list.innerHTML = alerts.map(a => `
-    <div class="alert-item sev--${a.severity}" data-id="${a.id}">
+  list.innerHTML = alerts.map(a => {
+    const sev = a.type || a.severity || 'medium';
+    const title = a.message || a.title || 'Alert';
+    return `
+    <div class="alert-item sev--${sev}" data-id="${a.id}">
       <div class="alert-header">
-        <div>
-          <div class="alert-title">${esc(a.title)}</div>
-          <div class="alert-agent">${esc(a.agent_name)} &bull; <span class="sev-pill ${a.severity}">${a.severity}</span></div>
+        <div class="alert-clickable" data-id="${a.id}" style="cursor:pointer;flex:1">
+          <div class="alert-title">${esc(title)}</div>
+          <div class="alert-agent">${esc(a.agent_name)} &bull; <span class="sev-pill ${sev}">${sev}</span></div>
         </div>
         <button class="resolve-btn" data-id="${a.id}">Resolve</button>
       </div>
-      <div class="alert-message">${esc(a.message)}</div>
+      <div class="alert-detail" id="alert-detail-${a.id}" style="display:none;margin-top:8px;padding:10px;background:var(--surface);border-radius:6px;font-size:13px;white-space:pre-wrap;max-height:400px;overflow-y:auto"></div>
       <div class="alert-agent" style="margin-top:4px">${relativeTime(a.created_at)}</div>
     </div>
-  `).join('');
+  `}).join('');
 
   list.querySelectorAll('.resolve-btn').forEach(btn => {
-    btn.addEventListener('click', () => resolveAlert(parseInt(btn.dataset.id)));
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      resolveAlert(parseInt(btn.dataset.id));
+    });
+  });
+
+  list.querySelectorAll('.alert-clickable').forEach(el => {
+    el.addEventListener('click', () => toggleAlertDetail(parseInt(el.dataset.id)));
   });
 }
 
@@ -197,6 +207,124 @@ function resolveAlert(id) {
 
   // Also hit REST endpoint
   fetch(`/rv-control/api/alerts/${id}/resolve`, { method: 'POST' }).catch(() => {});
+}
+
+async function toggleAlertDetail(id) {
+  const el = document.getElementById('alert-detail-' + id);
+  if (!el) return;
+
+  if (el.style.display !== 'none') {
+    el.style.display = 'none';
+    return;
+  }
+
+  el.style.display = 'block';
+  el.textContent = 'Loading details...';
+
+  try {
+    const resp = await fetch('/rv-control/api/alerts/' + id + '/detail');
+    const data = await resp.json();
+
+    if (data.report) {
+      const report = typeof data.report === 'string' ? data.report : JSON.stringify(data.report, null, 2);
+      let html = '<strong>Agent Report</strong>\n\n';
+      try {
+        const parsed = typeof data.report === 'string' ? JSON.parse(data.report) : data.report;
+        const reportData = parsed.data ? (typeof parsed.data === 'string' ? JSON.parse(parsed.data) : parsed.data) : parsed;
+        html += formatReport(reportData);
+      } catch (_) {
+        html += esc(report.substring(0, 5000));
+      }
+      html += '<div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border)">';
+      html += '<button class="btn btn--primary implement-btn" data-id="' + id + '" style="margin-right:8px">Implement Recommendations</button>';
+      html += '<span class="implement-status" id="impl-status-' + id + '"></span>';
+      html += '</div>';
+      el.innerHTML = html;
+      el.querySelector('.implement-btn').addEventListener('click', (e) => {
+        e.stopPropagation();
+        implementAlert(id);
+      });
+    } else if (data.logs && data.logs.length) {
+      let html = '<strong>Agent Logs</strong>\n\n';
+      data.logs.forEach(log => {
+        html += '<div style="margin-bottom:6px"><span class="sev-pill ' + (log.status || 'info') + '">' + esc(log.status || 'info') + '</span> ' + esc(log.message || '') + '</div>';
+      });
+      el.innerHTML = html;
+    } else {
+      el.textContent = 'No additional details available for this alert.';
+    }
+  } catch (err) {
+    el.textContent = 'Failed to load details: ' + err.message;
+  }
+}
+
+async function implementAlert(id) {
+  const btn = document.querySelector('.implement-btn[data-id="' + id + '"]');
+  const status = document.getElementById('impl-status-' + id);
+  if (btn) { btn.disabled = true; btn.textContent = 'Implementing...'; }
+  if (status) status.textContent = 'Sending to agent...';
+
+  try {
+    const resp = await fetch('/rv-control/api/alerts/' + id + '/implement', { method: 'POST' });
+    const data = await resp.json();
+
+    if (data.success) {
+      if (btn) { btn.textContent = 'Sent to Agent'; btn.style.background = 'var(--green)'; }
+      if (status) status.innerHTML = '<span style="color:var(--green)">Agent is implementing recommendations now. This may take 1-2 minutes. Check the review queue for results.</span>';
+      setTimeout(() => {
+        state.alerts = state.alerts.filter(a => a.id !== id);
+        renderAlerts(state.alerts);
+      }, 3000);
+    } else {
+      if (btn) { btn.disabled = false; btn.textContent = 'Implement Recommendations'; }
+      if (status) status.innerHTML = '<span style="color:var(--red)">Failed: ' + esc(data.error || 'Unknown error') + '</span>';
+    }
+  } catch (err) {
+    if (btn) { btn.disabled = false; btn.textContent = 'Implement Recommendations'; }
+    if (status) status.innerHTML = '<span style="color:var(--red)">Error: ' + esc(err.message) + '</span>';
+  }
+}
+
+function formatReport(data) {
+  if (!data || typeof data !== 'object') return esc(String(data));
+  let html = '';
+
+  if (data.contentAudit && Array.isArray(data.contentAudit)) {
+    data.contentAudit.forEach(audit => {
+      html += '<div style="margin-bottom:12px;padding:8px;border:1px solid var(--border);border-radius:4px">';
+      html += '<strong>Content #' + (audit.contentId || '?') + '</strong> — ' + esc(audit.type || '') + ' — <span class="sev-pill ' + (audit.riskLevel || 'medium') + '">' + esc(audit.riskLevel || '?') + '</span>\n';
+      if (audit.issues && Array.isArray(audit.issues)) {
+        audit.issues.forEach((issue, i) => {
+          html += '\n<strong>' + (i + 1) + '. [' + esc(issue.severity || '?').toUpperCase() + '] ' + esc(issue.regulation || '') + '</strong>\n';
+          html += esc(issue.description || '') + '\n';
+          if (issue.recommendation) html += '<em>Fix: ' + esc(issue.recommendation) + '</em>\n';
+        });
+      }
+      html += '</div>';
+    });
+  } else if (data.gaps || data.contentGaps) {
+    const gaps = data.gaps || data.contentGaps;
+    if (Array.isArray(gaps)) {
+      gaps.forEach((gap, i) => {
+        html += '<strong>' + (i + 1) + '.</strong> ' + esc(typeof gap === 'string' ? gap : JSON.stringify(gap)) + '\n';
+      });
+    } else {
+      html += esc(JSON.stringify(gaps, null, 2));
+    }
+  } else if (data.anomalies || data.alerts || data.findings || data.issues) {
+    const items = data.anomalies || data.alerts || data.findings || data.issues;
+    if (Array.isArray(items)) {
+      items.forEach((item, i) => {
+        html += '<strong>' + (i + 1) + '.</strong> ' + esc(typeof item === 'string' ? item : (item.title || item.message || item.description || JSON.stringify(item))) + '\n';
+      });
+    } else {
+      html += esc(JSON.stringify(items, null, 2));
+    }
+  } else {
+    html += esc(JSON.stringify(data, null, 2).substring(0, 5000));
+  }
+
+  return html;
 }
 
 // ─── Log Stream ───────────────────────────────────────────────────────────────

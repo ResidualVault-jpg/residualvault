@@ -23,6 +23,7 @@ const AGENT_MANIFESTS = [
   { key: 'graphics-image',        file: './agents/graphics-image-agent' },
   { key: 'veo-video',          file: './agents/veo-video-agent-v2' },
   { key: 'legal-compliance',      file: './agents/legal-compliance-agent' },
+  { key: 'compliance-auto-resolver', file: './agents/compliance-auto-resolver' },
   { key: 'brand-voice',           file: './agents/brand-voice-auditor' },
   { key: 'marketing-master',      file: './agents/marketing-master-agent' },
   { key: 'advertising-master',    file: './agents/advertising-master-agent' },
@@ -51,6 +52,7 @@ const AGENT_MANIFESTS = [
   { key: 'customer-success',      file: './agents/customer-success-agent' },
   { key: "meta-token",          file: "./agents/meta-token-agent" },
   { key: "instagram-carousel",  file: "./agents/instagram-carousel-agent" },
+  { key: "staking-alpha",       file: "./agents/staking-alpha-agent" },
 ];
 
 // Loaded agent instances
@@ -104,6 +106,15 @@ async function runAgent(key, context = {}) {
   return agent.run(context);
 }
 
+/** Implement an approved alert — runs the originating agent's implement() method */
+async function implementAlert(agentKey, report, alertId) {
+  if (Object.keys(agents).length === 0) loadAgents();
+  const agent = agents[agentKey];
+  if (!agent) throw new Error(`Unknown agent key: ${agentKey}`);
+  logger.info(`Implementation trigger: ${agent.name} (alert ${alertId})`);
+  return agent.implement(report, alertId);
+}
+
 /** Get all agent statuses (auto-loads agents if not yet loaded) */
 function getAgentStatuses() {
   if (Object.keys(agents).length === 0) loadAgents();
@@ -148,6 +159,42 @@ async function start() {
   }, { timezone: 'America/Denver' });
   logger.info('Email publisher scheduled Mondays at 8 AM Denver');
 
+  // Auto-schedule: Sunday 12 PM (noon) Denver — auto-approves social posts and schedules Mon–Sat
+  // This is the key automation: content agents generate Sunday morning, this schedules Sunday at noon
+  const ContentSchedulerAgent = require('./agents/content-scheduler-agent');
+  const autoScheduler = new ContentSchedulerAgent();
+
+  cron.schedule('0 12 * * 0', async () => {
+    logger.info('Sunday auto-schedule triggered — approving and scheduling week...');
+    try {
+      const result = await autoScheduler.autoApproveAndSchedule();
+      logger.info(`Auto-schedule complete: approved ${result.totalApproved} batches, scheduled ${result.totalScheduled} posts`);
+    } catch (err) { logger.error('Auto-schedule error: ' + err.message); }
+  }, { timezone: 'America/Denver' });
+  logger.info('Auto-scheduler scheduled Sundays at 12 PM (noon) Denver');
+
+  // Daily gap-fill: 7 AM Denver — catches any missed posts and fills empty days
+  cron.schedule('0 7 * * 1-6', async () => {
+    logger.info('Daily gap-fill triggered...');
+    try {
+      const result = await autoScheduler.autoApproveAndSchedule();
+      logger.info(`Gap-fill complete: approved ${result.totalApproved}, scheduled ${result.totalScheduled}`);
+    } catch (err) { logger.error('Gap-fill error: ' + err.message); }
+  }, { timezone: 'America/Denver' });
+  logger.info('Daily gap-fill scheduled Mon-Sat at 7 AM Denver');
+
+
+  // ─── APY ALERT CHECKER (every 30 min) ──────────────────────────────────────
+  const checkApyAlerts = require('./apyAlertChecker');
+  cron.schedule('*/30 * * * *', async () => {
+    logger.info('APY alert checker running...');
+    try {
+      const result = await checkApyAlerts();
+      logger.info(`APY alerts: checked ${result.checked}, triggered ${result.triggered}`);
+    } catch (err) { logger.error('APY alert checker error: ' + err.message); }
+  });
+  logger.info('APY alert checker scheduled every 30 minutes');
+
   logger.info(`Scheduler running — ${Object.keys(cronJobs).length} cron jobs active`);
 }
 
@@ -157,7 +204,7 @@ function stop() {
   logger.info('All cron jobs stopped');
 }
 
-module.exports = { start, stop, runAgent, getAgent, getAgentStatuses, agents };
+module.exports = { start, stop, runAgent, implementAlert, getAgent, getAgentStatuses, agents };
 
 // Allow standalone execution: node scheduler.js
 if (require.main === module) {

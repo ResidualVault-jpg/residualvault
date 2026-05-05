@@ -2,6 +2,8 @@ require('dotenv').config();
 const express = require('express');
 const rateLimit = require('express-rate-limit');
 const helmet = require('helmet');
+const jwt = require('jsonwebtoken');
+const JWT_SECRET_MAIN = process.env.JWT_SECRET || 'rv_jwt_secret_2026';
 const cors = require('cors');
 const morgan = require('morgan');
 const redis = require('redis');
@@ -105,6 +107,10 @@ app.get('/api/rewards/:slug', async (req, res) => {
     res.status(500).json({ error: 'Database error' });
   }
 });
+
+// SEO Pre-rendering for frontend pages
+const { seoPrerender } = require("./seo-prerender");
+app.use(seoPrerender);
 
 app.listen(PORT, () => console.log(`ResidualVault API running on port ${PORT}`));
 module.exports = { pool, redisClient };
@@ -260,7 +266,7 @@ app.post('/api/newsletter/subscribe', async (req, res) => {
       subject: '🎉 Welcome to ResidualVault — You\'re subscribed!',
       html: `
         <div style="font-family: system-ui, sans-serif; max-width: 600px; margin: 0 auto; background: #0f0f13; padding: 24px; border-radius: 16px;">
-          <div style="background: linear-gradient(135deg, #6c63ff, #3ecfcf); padding: 24px; border-radius: 12px; margin-bottom: 24px;">
+          <div style="background: linear-gradient(135deg, #1a1a2e 0%, #0f0f1a 100%); border: 1px solid #2a2a3a; border-radius: 16px 16px 0 0; padding: 32px 24px; text-align: center;"><img src="https://residualvault.com/images/rv-shield.png" alt="ResidualVault" width="48" height="48" style="display: block; margin: 0 auto 12px;">
             <h1 style="color: white; margin: 0; font-size: 22px;">ResidualVault</h1>
             <p style="color: rgba(255,255,255,0.8); margin: 4px 0 0;">Welcome to the community!</p>
           </div>
@@ -316,6 +322,147 @@ const adminAuth = (req, res, next) => {
   }
   next();
 };
+
+
+// ─── AUTH MIDDLEWARE FOR GATING ─────────────────────────────────────────────
+
+function optionalAuth(req, res, next) {
+  const authHeader = req.headers.authorization;
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    try { req.user = jwt.verify(authHeader.split(' ')[1], JWT_SECRET_MAIN); } catch (e) {}
+  }
+  next();
+}
+
+function requireAuth(req, res, next) {
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return res.status(401).json({ error: 'Authentication required', upgrade: true });
+  }
+  try {
+    req.user = jwt.verify(authHeader.split(' ')[1], JWT_SECRET_MAIN);
+    next();
+  } catch (e) {
+    return res.status(401).json({ error: 'Invalid or expired token', upgrade: true });
+  }
+}
+
+// ─── USER APY ALERTS ────────────────────────────────────────────────────────
+
+app.get('/api/alerts', requireAuth, async (req, res) => {
+  try {
+    const result = await pool.query(`
+      SELECT ua.*, p.name as protocol_name, p.slug, p.chain,
+        (SELECT vr.apy FROM vault_rewards vr WHERE vr.protocol_id = ua.protocol_id ORDER BY vr.fetched_at DESC LIMIT 1) as current_apy
+      FROM user_apy_alerts ua
+      JOIN protocols p ON p.id = ua.protocol_id
+      WHERE ua.user_id = $1
+      ORDER BY ua.created_at DESC
+    `, [req.user.id]);
+    res.json({ alerts: result.rows });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to fetch alerts' });
+  }
+});
+
+app.post('/api/alerts', requireAuth, async (req, res) => {
+  try {
+    const { protocol_id, direction, threshold } = req.body;
+    if (!protocol_id || !direction || !threshold) {
+      return res.status(400).json({ error: 'protocol_id, direction, and threshold are required' });
+    }
+    const user = await pool.query('SELECT plan FROM users WHERE id=$1', [req.user.id]);
+    const plan = user.rows[0]?.plan || 'free';
+    if (plan === 'free') {
+      const count = await pool.query('SELECT COUNT(*) FROM user_apy_alerts WHERE user_id=$1 AND is_active=true', [req.user.id]);
+      if (parseInt(count.rows[0].count) >= 1) {
+        return res.status(403).json({
+          error: 'Free plan allows 1 active alert. Upgrade to Starter for unlimited alerts.',
+          upgrade: true, limit: 1, current: parseInt(count.rows[0].count)
+        });
+      }
+    }
+    const result = await pool.query(
+      `INSERT INTO user_apy_alerts (user_id, protocol_id, direction, threshold)
+       VALUES ($1, $2, $3, $4)
+       ON CONFLICT (user_id, protocol_id, direction) DO UPDATE SET threshold=$4, is_active=true
+       RETURNING *`,
+      [req.user.id, protocol_id, direction, threshold]
+    );
+    res.status(201).json({ alert: result.rows[0] });
+  } catch (err) {
+    console.error('[Alerts]', err.message);
+    res.status(500).json({ error: 'Failed to create alert' });
+  }
+});
+
+app.delete('/api/alerts/:id', requireAuth, async (req, res) => {
+  try {
+    await pool.query('UPDATE user_apy_alerts SET is_active=false WHERE id=$1 AND user_id=$2', [req.params.id, req.user.id]);
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to delete alert' });
+  }
+});
+
+// ─── GATED PROTOCOL DETAIL ─────────────────────────────────────────────────
+
+app.get('/api/protocols/:slug/detail', optionalAuth, async (req, res) => {
+  try {
+    const protocol = await pool.query('SELECT * FROM protocols WHERE slug=$1', [req.params.slug]);
+    if (!protocol.rows.length) return res.status(404).json({ error: 'Protocol not found' });
+    const rewards = await pool.query(
+      'SELECT apy, token, fetched_at FROM vault_rewards WHERE protocol_id=$1 ORDER BY fetched_at DESC LIMIT 48',
+      [protocol.rows[0].id]
+    );
+    const latest = rewards.rows[0];
+    const high = rewards.rows.length ? Math.max(...rewards.rows.map(r => parseFloat(r.apy))) : 0;
+    const low = rewards.rows.length ? Math.min(...rewards.rows.map(r => parseFloat(r.apy))) : 0;
+    const avg = rewards.rows.length ? (rewards.rows.reduce((s, r) => s + parseFloat(r.apy), 0) / rewards.rows.length) : 0;
+    const base = { ...protocol.rows[0], current_apy: latest?.apy || 0, token: latest?.token };
+
+    if (!req.user) {
+      return res.json({
+        ...base,
+        high_apy: null, low_apy: null, avg_apy: null,
+        history: rewards.rows.slice(0, 3),
+        gated: true,
+        gatedFields: ['high_apy', 'low_apy', 'avg_apy', 'full_history'],
+        message: 'Create a free account to see full APY history, highs, lows, and averages.'
+      });
+    }
+    const userRow = await pool.query('SELECT plan FROM users WHERE id=$1', [req.user.id]);
+    const plan = userRow.rows[0]?.plan || 'free';
+    const historyLimit = plan === 'free' ? 12 : 48;
+    res.json({
+      ...base, high_apy: high, low_apy: low, avg_apy: avg.toFixed(4),
+      history: rewards.rows.slice(0, historyLimit), gated: false, plan
+    });
+  } catch (err) {
+    res.status(500).json({ error: 'Database error' });
+  }
+});
+
+// ─── PLAN LIMITS ────────────────────────────────────────────────────────────
+
+app.get('/api/plan/limits', optionalAuth, async (req, res) => {
+  if (!req.user) {
+    return res.json({
+      authenticated: false, plan: null,
+      limits: { comparisons: 2, alerts: 0, historyDepth: 3, riskAnalysis: false, taxReporting: false, apiAccess: false },
+      upgradeMessage: 'Create a free account to compare protocols, set alerts, and track your staking portfolio.'
+    });
+  }
+  const user = await pool.query('SELECT plan FROM users WHERE id=$1', [req.user.id]);
+  const plan = user.rows[0]?.plan || 'free';
+  const planLimits = {
+    free:    { comparisons: 3, alerts: 1, historyDepth: 12, riskAnalysis: false, taxReporting: false, apiAccess: false },
+    starter: { comparisons: -1, alerts: -1, historyDepth: 48, riskAnalysis: false, taxReporting: false, apiAccess: false },
+    pro:     { comparisons: -1, alerts: -1, historyDepth: 48, riskAnalysis: true,  taxReporting: true,  apiAccess: false },
+    premium: { comparisons: -1, alerts: -1, historyDepth: 48, riskAnalysis: true,  taxReporting: true,  apiAccess: true  },
+  };
+  res.json({ authenticated: true, plan, limits: planLimits[plan] || planLimits.free });
+});
 
 // Admin stats
 app.get('/api/admin/stats', adminAuth, async (req, res) => {
@@ -542,3 +689,173 @@ app.post('/api/v1/education/courses/:courseId/enroll', (req, res) => { res.json(
 app.get('/api/v1/education/progress', (req, res) => { res.json({ success: true, data: { completedCourses: 0, totalCourses: 6, completedLessons: 0 } }); });
 app.get('/api/v1/education/certificates', (req, res) => { res.json({ success: true, data: [] }); });
 app.get('/api/v1/education/leaderboard', (req, res) => { res.json({ success: true, data: [] }); });
+
+// ─── PROTOCOL WATCHLIST & APY ALERTS ──────────────────────────────
+app.post('/api/watchlist/add', async (req, res) => {
+  try {
+    const { email, protocolId, alertThreshold, alertDirection } = req.body;
+    if (!email || !protocolId) return res.status(400).json({ error: 'Email and protocolId required' });
+
+    const existing = await pool.query(
+      'SELECT id FROM protocol_watchlist WHERE email=$1 AND protocol_id=$2',
+      [email.toLowerCase(), protocolId]
+    );
+    if (existing.rows.length) {
+      await pool.query(
+        'UPDATE protocol_watchlist SET alert_threshold=$1, alert_direction=$2 WHERE email=$3 AND protocol_id=$4',
+        [alertThreshold || 5.0, alertDirection || 'both', email.toLowerCase(), protocolId]
+      );
+      return res.json({ success: true, message: 'Watchlist updated' });
+    }
+
+    await pool.query(
+      'INSERT INTO protocol_watchlist (email, protocol_id, alert_threshold, alert_direction) VALUES ($1, $2, $3, $4)',
+      [email.toLowerCase(), protocolId, alertThreshold || 5.0, alertDirection || 'both']
+    );
+
+    // Auto-subscribe to newsletter if not already
+    const sub = await pool.query('SELECT id FROM newsletter_subscribers WHERE email=$1', [email.toLowerCase()]);
+    if (!sub.rows.length) {
+      await pool.query(
+        'INSERT INTO newsletter_subscribers (email, first_name, source) VALUES ($1, $2, $3)',
+        [email.toLowerCase(), '', 'watchlist']
+      );
+    }
+
+    res.json({ success: true, message: 'Protocol added to watchlist' });
+  } catch (err) {
+    console.error('[Watchlist]', err.message);
+    res.status(500).json({ error: 'Failed to add to watchlist' });
+  }
+});
+
+app.get('/api/watchlist/:email', async (req, res) => {
+  try {
+    const result = await pool.query(`
+      SELECT w.id, w.protocol_id, w.alert_threshold, w.alert_direction,
+             p.name, p.slug, p.chain, COALESCE(vr.apy, 0) as current_apy
+      FROM protocol_watchlist w
+      JOIN protocols p ON p.id = w.protocol_id
+      LEFT JOIN LATERAL (
+        SELECT apy FROM vault_rewards WHERE protocol_id = p.id ORDER BY fetched_at DESC LIMIT 1
+      ) vr ON true
+      WHERE w.email = $1
+      ORDER BY p.name
+    `, [req.params.email.toLowerCase()]);
+    res.json({ success: true, data: result.rows });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to fetch watchlist' });
+  }
+});
+
+app.delete('/api/watchlist/:email/:protocolId', async (req, res) => {
+  try {
+    await pool.query(
+      'DELETE FROM protocol_watchlist WHERE email=$1 AND protocol_id=$2',
+      [req.params.email.toLowerCase(), req.params.protocolId]
+    );
+    res.json({ success: true, message: 'Removed from watchlist' });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to remove from watchlist' });
+  }
+});
+
+// ─── SHAREABLE CALCULATOR RESULTS ─────────────────────────────────
+app.get('/api/calculator/share', async (req, res) => {
+  try {
+    const { protocols: protocolIds, amounts, years, compound } = req.query;
+    if (!protocolIds) return res.status(400).json({ error: 'protocols param required' });
+
+    const ids = protocolIds.split(',').map(Number);
+    const amts = (amounts || '1000').split(',').map(Number);
+    const yrs = parseInt(years) || 1;
+    const comp = compound || 'monthly';
+
+    const result = await pool.query(`
+      SELECT p.id, p.name, p.slug, p.chain, COALESCE(vr.apy, 0) as apy
+      FROM protocols p
+      LEFT JOIN LATERAL (
+        SELECT apy FROM vault_rewards WHERE protocol_id = p.id ORDER BY fetched_at DESC LIMIT 1
+      ) vr ON true
+      WHERE p.id = ANY($1)
+    `, [ids]);
+
+    const compN = { daily: 365, monthly: 12, yearly: 1, none: 0 };
+    const n = compN[comp] || 12;
+
+    const calculations = result.rows.map((p, i) => {
+      const amount = amts[i] || amts[0] || 1000;
+      const rate = parseFloat(p.apy) / 100;
+      let total;
+      if (comp === 'none') {
+        total = amount + (amount * rate * yrs);
+      } else {
+        total = amount * Math.pow(1 + rate / n, n * yrs);
+      }
+      return {
+        protocol: p.name,
+        chain: p.chain,
+        apy: parseFloat(p.apy).toFixed(2),
+        invested: amount,
+        totalValue: total.toFixed(2),
+        earnings: (total - amount).toFixed(2),
+        dailyEarnings: ((total - amount) / (yrs * 365)).toFixed(2)
+      };
+    });
+
+    const totalInvested = calculations.reduce((s, c) => s + c.invested, 0);
+    const totalValue = calculations.reduce((s, c) => s + parseFloat(c.totalValue), 0);
+
+    res.json({
+      success: true,
+      data: {
+        calculations,
+        summary: {
+          totalInvested,
+          totalValue: totalValue.toFixed(2),
+          totalEarnings: (totalValue - totalInvested).toFixed(2),
+          years: yrs,
+          compounding: comp
+        },
+        shareText: `I'd earn $${(totalValue - totalInvested).toFixed(2)} staking $${totalInvested.toLocaleString()} over ${yrs} year${yrs > 1 ? 's' : ''} — check yours at residualvault.com/calculator`
+      }
+    });
+  } catch (err) {
+    console.error('[Calculator Share]', err.message);
+    res.status(500).json({ error: 'Failed to generate share data' });
+  }
+});
+
+// ─── TOP COIN SEO PAGES ──────────────────────────────────────────
+app.get('/api/staking/:coin', async (req, res) => {
+  try {
+    const coin = req.params.coin.toLowerCase();
+    const result = await pool.query(`
+      SELECT p.id, p.name, p.slug, p.chain, p.category,
+             COALESCE(vr.apy, 0) as apy
+      FROM protocols p
+      LEFT JOIN LATERAL (
+        SELECT apy FROM vault_rewards WHERE protocol_id = p.id ORDER BY fetched_at DESC LIMIT 1
+      ) vr ON true
+      WHERE LOWER(p.chain) = $1 OR LOWER(p.name) LIKE $2
+      ORDER BY vr.apy DESC
+    `, [coin, '%' + coin + '%']);
+
+    if (!result.rows.length) return res.status(404).json({ error: 'No protocols found for ' + coin });
+
+    res.json({
+      success: true,
+      coin: coin,
+      protocolCount: result.rows.length,
+      data: result.rows.map(r => ({
+        name: r.name,
+        slug: r.slug,
+        chain: r.chain,
+        category: r.category,
+        apy: parseFloat(r.apy).toFixed(2)
+      }))
+    });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to fetch coin data' });
+  }
+});

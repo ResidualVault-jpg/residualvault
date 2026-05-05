@@ -56,16 +56,16 @@ Output JSON:
     this._log('info', 'Running daily compliance audit');
 
     // Pull recent generated content to review
-    const recentContent = db.getGeneratedContent(20);
+    const recentContent = await db.getGeneratedContent(20);
 
     const auditResults = [];
     let highRiskCount  = 0;
 
     // Review a sample of recent content
     for (const item of recentContent.slice(0, 5)) {
-      if (!item.content) continue;
+      const contentStr = typeof item.content === "string" ? item.content : JSON.stringify(item.content); if (!contentStr || contentStr === "[]" || contentStr === "{}") continue;
       try {
-        const raw    = await this.reviewContent(item.content.substring(0, 2000), item.content_type);
+        const raw    = await this.reviewContent(contentStr.substring(0, 2000), item.content_type);
         const result = this.parseJSON(raw) || {};
 
         if (['high', 'critical'].includes(result.riskLevel)) {

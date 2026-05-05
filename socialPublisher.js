@@ -92,8 +92,30 @@ async function publishApprovedPosts() {
     `);
 
     if (result.rows.length === 0) {
-      console.log('[Publisher] No approved posts ready to publish.');
-      return;
+      console.log('[Publisher] No approved posts — running auto-schedule fallback...');
+      try {
+        const ContentSchedulerAgent = require('./agents/content-scheduler-agent');
+        const scheduler = new ContentSchedulerAgent();
+        const autoResult = await scheduler.autoApproveAndSchedule();
+        console.log(`[Publisher] Auto-scheduled ${autoResult.totalScheduled} posts`);
+        if (autoResult.totalScheduled > 0) {
+          const retry = await pool.query(
+            `SELECT * FROM content_posts WHERE status = 'approved' AND scheduled_date <= CURRENT_DATE ORDER BY scheduled_date ASC, platform ASC`
+          );
+          if (retry.rows.length > 0) {
+            console.log(`[Publisher] Found ${retry.rows.length} posts after auto-schedule`);
+            result.rows.push(...retry.rows);
+          } else {
+            console.log('[Publisher] No posts for today after auto-schedule.');
+            return;
+          }
+        } else {
+          return;
+        }
+      } catch (autoErr) {
+        console.error('[Publisher] Auto-schedule fallback failed:', autoErr.message);
+        return;
+      }
     }
 
     console.log(`[Publisher] Found ${result.rows.length} posts to publish`);

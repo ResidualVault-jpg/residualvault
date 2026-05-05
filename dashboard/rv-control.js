@@ -116,6 +116,122 @@ app.post('/api/alerts/:id/resolve', async (req, res) => {
   }
 });
 
+/** GET /api/alerts/:id/detail — fetch related report + logs for an alert */
+app.get('/api/alerts/:id/detail', async (req, res) => {
+  try {
+    const alertId = parseInt(req.params.id);
+    const alertResult = await db.query('SELECT * FROM system_alerts WHERE id = $1', [alertId]);
+    if (!alertResult.rows.length) return res.status(404).json({ error: 'Alert not found' });
+    const alert = alertResult.rows[0];
+
+    const reportResult = await db.query(
+      `SELECT id, report, created_at FROM agent_reports
+       WHERE agent_name = $1 AND created_at >= $2::timestamp - interval '1 hour'
+       ORDER BY created_at DESC LIMIT 1`,
+      [alert.agent_name, alert.created_at]
+    );
+    const report = reportResult.rows.length ? reportResult.rows[0].report : null;
+
+    const logResult = await db.query(
+      `SELECT status, message, created_at FROM agent_logs
+       WHERE agent_name = $1 AND created_at >= $2::timestamp - interval '1 hour'
+       ORDER BY created_at DESC LIMIT 10`,
+      [alert.agent_name, alert.created_at]
+    );
+
+    res.json({ alert, report, logs: logResult.rows });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/** POST /api/alerts/:id/implement — owner approves, agent executes recommendations */
+app.post('/api/alerts/:id/implement', async (req, res) => {
+  try {
+    const alertId = parseInt(req.params.id);
+    const alertResult = await db.query('SELECT * FROM system_alerts WHERE id = $1', [alertId]);
+    if (!alertResult.rows.length) return res.status(404).json({ error: 'Alert not found' });
+    const alert = alertResult.rows[0];
+
+    const reportResult = await db.query(
+      `SELECT id, report FROM agent_reports
+       WHERE agent_name = $1 AND created_at >= $2::timestamp - interval '2 hours'
+       ORDER BY created_at DESC LIMIT 1`,
+      [alert.agent_name, alert.created_at]
+    );
+    const report = reportResult.rows.length ? reportResult.rows[0].report : null;
+
+    if (!report) {
+      return res.status(404).json({ error: 'No report found for this alert — cannot implement without recommendations' });
+    }
+
+    // Map agent display name to scheduler key
+    const AGENT_NAME_TO_KEY = {
+      'Analytics Oracle': 'analytics-oracle',
+      'Intelligence Scout': 'intelligence-scout',
+      'Industry Researcher': 'industry-researcher',
+      'Revenue Intelligence Agent': 'revenue-intelligence',
+      'SEO Architect': 'seo-architect',
+      'Twitter Content Creator': 'twitter-content',
+      'Brand Voice Auditor': 'brand-voice',
+      'LinkedIn Content Creator': 'linkedin-content',
+      'Content Commander': 'content-commander',
+      'Content Scheduler Agent': 'content-scheduler',
+      'Social Media Agent': 'social-media',
+      'Community Voice': 'community-voice',
+      'Email Conductor': 'email-conductor',
+      'Marketing Master Agent': 'marketing-master',
+      'Advertising Master Agent': 'advertising-master',
+      'Ad Strategist': 'ad-strategist',
+      'Promotions Master Agent': 'promotions-master',
+      'Partnership Scout': 'partnership-scout',
+      'Personalization Engine': 'personalization',
+      'Customer Success Agent': 'customer-success',
+      'Legal & Compliance Guardian': 'legal-compliance',
+      'Compliance Auto-Resolver': 'compliance-auto-resolver',
+      'Graphics/Image Agent': 'graphics-image',
+      'Master Strategist': 'master-strategist',
+      'Cybersecurity Agent': 'cybersecurity',
+      'Infrastructure Security Scanner': 'infra-security',
+      'Threat Intelligence Agent': 'threat-intel',
+      'Veo Video Agent': 'veo-video',
+      'Crisis Response Agent': 'crisis-response',
+      'Fixer Agent': 'fixer',
+      'User Testing Agent': 'user-testing',
+      'Meta Token Agent': 'meta-token',
+      'Instagram Carousel Agent': 'instagram-carousel',
+      'Staking Alpha Weekly': 'staking-alpha',
+    };
+
+    const agentKey = AGENT_NAME_TO_KEY[alert.agent_name];
+    if (!agentKey) {
+      return res.status(400).json({ error: 'Cannot map agent "' + alert.agent_name + '" to a scheduler key' });
+    }
+
+    // Mark as implementing
+    await db.query(
+      `UPDATE system_alerts SET details = COALESCE(details, '{}'::jsonb) || '{"status": "implementing"}'::jsonb WHERE id = $1`,
+      [alertId]
+    );
+
+    res.json({ success: true, message: 'Implementation started for ' + alert.agent_name, alertId, agentKey });
+
+    // Run implementation asynchronously (don't block the response)
+    let scheduler;
+    try { scheduler = require('../scheduler'); } catch (_) {}
+    if (scheduler && scheduler.implementAlert) {
+      scheduler.implementAlert(agentKey, report, alertId).then(result => {
+        console.log('[rv-control] Implementation complete for alert ' + alertId + ':', JSON.stringify(result).substring(0, 200));
+        broadcastUpdate();
+      }).catch(err => {
+        console.error('[rv-control] Implementation failed for alert ' + alertId + ':', err.message);
+      });
+    }
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 /** GET /api/reports?limit=50&agent= */
 app.get('/api/reports', async (req, res) => {
   try {
@@ -286,8 +402,30 @@ app.post('/api/review/:id/approve', async (req, res) => {
     const PLATFORM_MAP = { 'twitter/x': 'twitter', 'twitter': 'twitter', 'x': 'twitter', 'linkedin': 'linkedin', 'instagram': 'instagram', 'facebook': 'facebook', 'tiktok': 'tiktok' };
     const normPlatform = (p) => p ? (PLATFORM_MAP[p.toLowerCase().trim()] || p.toLowerCase().trim()) : null;
 
+    // Veo script approval — triggers Veo clip generation (costs money)
+    if (row.content_type && row.content_type.startsWith('video-script-')) {
+      let meta = {};
+      try { meta = typeof row.metadata === 'string' ? JSON.parse(row.metadata) : (row.metadata || {}); } catch (_) {}
+
+      if (meta.status !== 'awaiting_veo_approval') {
+        await db.updateContentReview(id, 'approved', { notes: req.body?.notes || '' });
+      } else {
+        await db.updateContentReview(id, 'approved_for_generation', { approvedAt: new Date().toISOString() });
+        res.json({ success: true, id, status: 'generating', message: 'Veo generation started. You will see the final video in your review queue when complete.' });
+
+        // Trigger generation in the background (don't block the HTTP response)
+        const VeoVideoAgent = require('../agents/veo-video-agent-v2');
+        const agent = new VeoVideoAgent();
+        agent.generateApprovedVideo(id).then(function(result) {
+          console.log('[rv-control] Veo generation complete for content ' + id + ':', result.status);
+        }).catch(function(err) {
+          console.error('[rv-control] Veo generation failed for content ' + id + ':', err.message);
+        });
+        return;
+      }
+    }
     // Video content - trigger YouTube upload
-    if (['video-office-journey', 'video-conference-room', 'video'].includes(row.content_type)) {
+    else if (['video-office-journey', 'video-conference-room', 'video'].includes(row.content_type)) {
       let scheduler;
       try { scheduler = require('../scheduler'); } catch (_) {}
       const agent = scheduler?.getAgent('heygen-video');
@@ -297,7 +435,7 @@ app.post('/api/review/:id/approve', async (req, res) => {
       }
       await db.updateContentReview(id, 'approved', { notes: req.body?.notes || '' });
     }
-    // Social posts - unpack and insert into content_posts for publishing
+    // Social posts - unpack and distribute across the week
     else if (row.content_type === 'social-posts') {
       await db.updateContentReview(id, 'approved', { notes: req.body?.notes || '' });
       let posts = [];
@@ -305,8 +443,36 @@ app.post('/api/review/:id/approve', async (req, res) => {
       let meta = {};
       try { meta = typeof row.metadata === 'string' ? JSON.parse(row.metadata) : (row.metadata || {}); } catch (_) {}
       const defaultPlatform = normPlatform(meta.platform);
-      const scheduledDate = req.body?.scheduledDate || new Date(Date.now() + 86400000).toISOString().split('T')[0];
+
+      // Distribute posts across next 7 days based on platform cadence (Denver time)
+      const DAILY_CADENCE = { twitter: 3, linkedin: 1 };
+      const nowDenver = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Denver' }));
+      const tomorrow = new Date(nowDenver); tomorrow.setDate(tomorrow.getDate() + 1); tomorrow.setHours(0,0,0,0);
+      const weekEnd = new Date(tomorrow); weekEnd.setDate(weekEnd.getDate() + 7);
+      const slotCounts = {};
+      try {
+        const existing = await db.query(
+          `SELECT scheduled_date::text AS d, platform, COUNT(*)::int AS cnt FROM content_posts
+           WHERE scheduled_date >= $1 AND scheduled_date < $2 AND status IN ('approved','published')
+           GROUP BY scheduled_date, platform`,
+          [tomorrow.toISOString().split('T')[0], weekEnd.toISOString().split('T')[0]]
+        );
+        for (const r of existing.rows) slotCounts[r.d + '_' + r.platform] = r.cnt;
+      } catch (_) {}
+
+      function nextDateFor(plat) {
+        const max = DAILY_CADENCE[plat] || 2;
+        for (let d = 0; d < 7; d++) {
+          const dt = new Date(tomorrow); dt.setDate(dt.getDate() + d);
+          const ds = dt.toISOString().split('T')[0];
+          const key = ds + '_' + plat;
+          if ((slotCounts[key] || 0) < max) { slotCounts[key] = (slotCounts[key] || 0) + 1; return ds; }
+        }
+        return tomorrow.toISOString().split('T')[0];
+      }
+
       let postsInserted = 0;
+      const scheduledDates = [];
       for (const post of posts) {
         const platform = normPlatform(post.platform) || defaultPlatform;
         if (!platform) continue;
@@ -315,12 +481,14 @@ app.post('/api/review/:id/approve', async (req, res) => {
         let hashtags = '';
         if (Array.isArray(post.hashtags)) hashtags = post.hashtags.map(h => h.startsWith('#') ? h : '#' + h).join(' ');
         else if (typeof post.hashtags === 'string') hashtags = post.hashtags;
+        const postDate = req.body?.scheduledDate || nextDateFor(platform);
         try {
-          await db.query('INSERT INTO content_posts (platform, content, hashtags, scheduled_date, scheduled_time, status) VALUES ($1,$2,$3,$4,$5,$6)', [platform, content, hashtags, scheduledDate, '09:00:00', 'approved']);
+          await db.query('INSERT INTO content_posts (platform, content, hashtags, scheduled_date, scheduled_time, status) VALUES ($1,$2,$3,$4,$5,$6)', [platform, content, hashtags, postDate, '09:00:00', 'approved']);
           postsInserted++;
+          if (!scheduledDates.includes(postDate)) scheduledDates.push(postDate);
         } catch (e) { console.error('[rv-control] Insert post failed:', e.message); }
       }
-      extra = { postsInserted, scheduledDate };
+      extra = { postsInserted, scheduledDates };
     }
     // All other content - just mark approved
     else {

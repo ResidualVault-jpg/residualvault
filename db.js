@@ -131,7 +131,7 @@ pool.getContentForReview = async (limit = 100) => {
       SELECT * FROM generated_content
       WHERE metadata IS NULL
          OR metadata->>'status' IS NULL
-         OR metadata->>'status' IN ('pending_review', 'ready_for_review')
+         OR metadata->>'status' IN ('pending_review', 'ready_for_review', 'qa_failed', 'compliance_fixed', 'awaiting_veo_approval')
       ORDER BY created_at DESC
       LIMIT $1
     `, [limit]);
